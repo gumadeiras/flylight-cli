@@ -1,0 +1,14 @@
+{
+  "publishing_name": "SS00724",
+  "robot_id": "3007645",
+  "slide_code": "20140623_34_F1",
+  "objective": "20x",
+  "area": "VNC",
+  "tile": "ventral_nerve_cord",
+  "gender": "f",
+  "genotype": "w; 31B08-p65ADZp in attP40; 24A03-ZpGdbd in attP2",
+  "ad": "31B08-p65ADZp in attP40",
+  "dbd": "24A03-ZpGdbd in attP2",
+  "multichannel_mip": "SS00724-20140623_34_F1-f-20x-ventral_nerve_cord-Split_GAL4-image1-multichannel_mip.png",
+  "unaligned_stack": "SS00724-20140623_34_F1-f-20x-ventral_nerve_cord-Split_GAL4-image1-unaligned_stack.h5j"
+}

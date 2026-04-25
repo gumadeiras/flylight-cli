@@ -1,0 +1,24 @@
+{
+  "publication": {
+    "doi": "10.7554/eLife.04577"
+  },
+  "lines": [
+    "MB005B"
+  ],
+  "images": [
+    {
+      "id": 6878306,
+      "line": "MB005B",
+      "robot_id": "2135056",
+      "slide_code": "20140409_31_B1",
+      "objective": "20x",
+      "area": "Brain",
+      "tile": "brain",
+      "gender": "f",
+      "roi": "alpha'/beta'ap,alpha'/beta'm",
+      "genotype": "w; 13F02-p65ADZp in attP40/CyO; 34A03-ZpGdbd in attP2",
+      "multichannel_mip": "MB005B-20140409_31_B1-f-20x-brain-Split_GAL4-multichannel_mip.png",
+      "unaligned_stack": "MB005B-20140409_31_B1-f-20x-brain-Split_GAL4-unaligned_stack.h5j"
+    }
+  ]
+}
