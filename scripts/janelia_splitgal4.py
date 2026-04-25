@@ -8,6 +8,7 @@ import re
 import sqlite3
 import sys
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from html import unescape
@@ -26,6 +27,7 @@ NS = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
 USER_AGENT = "flylight-cli/0.2"
 DEFAULT_DB = Path("data/janelia_splitgal4.sqlite")
 DEFAULT_RAW_DIR = Path("data/raw_manifests")
+DEFAULT_WORKERS = 12
 
 
 def now_iso() -> str:
@@ -194,7 +196,28 @@ class ReleasePlan:
     publication_json: Any = None
 
 
-def plan_release(release: str, include_html_fallback: bool = True) -> ReleasePlan:
+def metadata_objects_for_prefix(prefix: str) -> list[dict[str, str]]:
+    contents, _ = s3_list_all(prefix=prefix)
+    return [item for item in contents if item["key"].endswith("-metadata.json")]
+
+
+def collect_line_metadata_objects(prefixes: list[str], workers: int) -> list[dict[str, str]]:
+    if not prefixes:
+        return []
+    workers = max(1, workers)
+    if workers == 1:
+        metadata_objects: list[dict[str, str]] = []
+        for prefix in prefixes:
+            metadata_objects.extend(metadata_objects_for_prefix(prefix))
+        return metadata_objects
+    metadata_objects = []
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        for objects in executor.map(metadata_objects_for_prefix, prefixes):
+            metadata_objects.extend(objects)
+    return metadata_objects
+
+
+def plan_release(release: str, include_html_fallback: bool = True, workers: int = DEFAULT_WORKERS) -> ReleasePlan:
     manifest_object = find_release_manifest_object(release)
     if manifest_object is not None:
         return ReleasePlan(
@@ -207,10 +230,7 @@ def plan_release(release: str, include_html_fallback: bool = True) -> ReleasePla
 
     _, line_prefixes = s3_list_all(prefix=f"{release}/", delimiter="/")
     line_prefixes = sorted(line_prefixes)
-    metadata_objects: list[dict[str, str]] = []
-    for prefix in line_prefixes:
-        contents, _ = s3_list_all(prefix=prefix)
-        metadata_objects.extend(item for item in contents if item["key"].endswith("-metadata.json"))
+    metadata_objects = collect_line_metadata_objects(line_prefixes, workers)
 
     html_summary = None
     html_token = ""
@@ -541,6 +561,7 @@ def sync_release_from_plan(
     conn: sqlite3.Connection,
     plan: ReleasePlan,
     raw_dir: Path | None,
+    workers: int = DEFAULT_WORKERS,
 ) -> dict[str, Any]:
     if plan.source_kind == "manifest":
         manifest = fetch_json(s3_url_for_key(plan.manifest_object["key"]))
@@ -555,18 +576,25 @@ def sync_release_from_plan(
         return store_release(conn, plan, release_data, raw_dir)
 
     if plan.source_kind == "line-metadata":
-        images = []
-        for item in plan.metadata_objects or []:
+        def fetch_metadata_payload(item: dict[str, str]) -> dict[str, Any] | None:
             payload = fetch_json(s3_url_for_key(item["key"]))
             if not isinstance(payload, dict):
-                continue
+                return None
             line = str(payload.get("publishing_name", "") or "").strip()
             if not line:
                 parts = item["key"].split("/")
                 line = parts[1] if len(parts) > 1 else ""
             payload["line"] = line
             payload["_metadata_key"] = item["key"]
-            images.append(payload)
+            return payload
+
+        workers = max(1, workers)
+        metadata_items = plan.metadata_objects or []
+        if workers == 1:
+            images = [payload for item in metadata_items if (payload := fetch_metadata_payload(item)) is not None]
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                images = [payload for payload in executor.map(fetch_metadata_payload, metadata_items) if payload is not None]
         lines = [prefix.rstrip("/").split("/")[-1] for prefix in (plan.line_prefixes or [])]
         release_data = {
             "lines": sorted(set(lines)),
@@ -622,19 +650,20 @@ def cmd_sync(args: argparse.Namespace) -> int:
     if not releases:
         raise SystemExit("choose --all or at least one --release")
     incremental = args.incremental or (args.all and not args.force)
+    workers = getattr(args, "workers", DEFAULT_WORKERS)
     conn = connect_db(args.db)
     raw_dir = None if args.no_raw else args.raw_dir
     synced = []
     skipped = []
     for release in releases:
-        plan = plan_release(release, include_html_fallback=True)
+        plan = plan_release(release, include_html_fallback=True, workers=workers)
         if plan.source_kind == "empty":
             skipped.append({"release": release, "reason": "no_source"})
             continue
         if incremental and should_skip_incremental(conn, release, plan.source_token):
             skipped.append({"release": release, "reason": "up_to_date"})
             continue
-        result = sync_release_from_plan(conn, plan, raw_dir)
+        result = sync_release_from_plan(conn, plan, raw_dir, workers=workers)
         synced.append(result)
         if args.verbose:
             print(
@@ -889,6 +918,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--all", action="store_true", help="sync every release found in the bucket")
     p.add_argument("--incremental", action="store_true", help="skip unchanged releases")
     p.add_argument("--force", action="store_true", help="disable incremental skip")
+    p.add_argument("--workers", type=int, default=DEFAULT_WORKERS, help="parallel workers for fallback sync")
     p.add_argument("--json", action="store_true")
     p.add_argument("--verbose", action="store_true")
     p.set_defaults(func=cmd_sync)
