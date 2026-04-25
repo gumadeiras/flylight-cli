@@ -10,14 +10,6 @@ from .core import (
     DEFAULT_DB,
     DEFAULT_RAW_DIR,
     DEFAULT_WORKERS,
-    asset_urls_from_image,
-    connect_db,
-    ensure_parent,
-    get_db_stats,
-    get_image_record,
-    get_line_record,
-    get_release_record,
-    get_release_records,
     json_dumps,
     list_releases,
     plan_release,
@@ -25,9 +17,19 @@ from .core import (
     should_skip_incremental,
     sync_release_from_plan,
 )
+from .db import connect_db, ensure_parent
 from .normalize import normalize_image_record
 from .normalize import normalize_line_record
-from .query import build_image_search_sql, build_line_search_sql
+from .query import build_image_search_sql, build_line_search_sql, build_line_text_search_sql
+from .records import (
+    asset_urls_from_image,
+    get_db_stats,
+    get_image_record,
+    get_line_matches,
+    get_line_record,
+    get_release_record,
+    get_release_records,
+)
 
 
 def cmd_releases(args: argparse.Namespace) -> int:
@@ -128,25 +130,34 @@ def cmd_search_images(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_search_text(args: argparse.Namespace) -> int:
+    conn = connect_db(args.db)
+    sql, params = build_line_text_search_sql(args)
+    rows = []
+    for row in conn.execute(sql, params):
+        item = normalize_line_record(dict(row))
+        item["rank"] = row["rank"]
+        rows.append(item)
+    if args.json:
+        print(json.dumps(rows, indent=2))
+        return 0
+    for row in rows:
+        fields = [
+            row["line"],
+            row["release"],
+            f"rank={row['rank']:.3f}",
+            f"images={row['image_count']}",
+            f"samples={row['sample_count']}",
+        ]
+        if row["expressed_in_text"]:
+            fields.append(row["expressed_in_text"])
+        print("\t".join(fields))
+    return 0
+
+
 def cmd_show_line(args: argparse.Namespace) -> int:
     conn = connect_db(args.db)
-    clauses = ["line = ?"]
-    params: list[Any] = [args.line]
-    if args.release:
-        clauses.append("release = ?")
-        params.append(args.release)
-    matches = [
-        dict(row)
-        for row in conn.execute(
-            f"""
-            SELECT release, line
-            FROM line_releases
-            WHERE {' AND '.join(clauses)}
-            ORDER BY release
-            """,
-            params,
-        )
-    ]
+    matches = get_line_matches(conn, args.line, releases=[args.release] if args.release else None)
     if not matches:
         raise SystemExit(f"no line found: {args.line}")
     result = {
@@ -286,6 +297,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, default=25)
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_search)
+
+    p = sub.add_parser("search-text", help="full-text search synced line records")
+    p.add_argument("query", help="SQLite FTS query, e.g. 'DNp04 AND 31B08'")
+    p.add_argument("--db", type=Path, default=DEFAULT_DB)
+    p.add_argument("--release")
+    p.add_argument("--source-kind", choices=["manifest", "line-metadata", "cgi-html", "empty"])
+    p.add_argument("--limit", type=int, default=25)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_search_text)
 
     p = sub.add_parser("search-images", help="search synced image records")
     p.add_argument("--db", type=Path, default=DEFAULT_DB)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import io
 import json
 import tempfile
@@ -300,6 +301,57 @@ class FlylightCliTests(unittest.TestCase):
             self.assertEqual(release_payload["release"], "MB Paper 2014")
             self.assertEqual(len(release_payload["lines"]), 1)
             self.assertEqual(release_payload["lines"][0]["line"], "MB005B")
+
+    def test_search_text(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "compare.sqlite"
+            conn = core.connect_db(db_path)
+            plans = [
+                core.ReleasePlan(
+                    release="MB Paper 2014",
+                    source_kind="manifest",
+                    source_locator="MB Paper 2014/MB_Paper_2014.metadata.json",
+                    source_token="manifest-token-1",
+                    manifest_object={
+                        "key": "MB Paper 2014/MB_Paper_2014.metadata.json",
+                        "last_modified": "2022-01-18T15:57:49.000Z",
+                    },
+                ),
+                core.ReleasePlan(
+                    release="MB Paper 2015",
+                    source_kind="manifest",
+                    source_locator="MB Paper 2015/MB_Paper_2015.metadata.json",
+                    source_token="manifest-token-2",
+                    manifest_object={
+                        "key": "MB Paper 2015/MB_Paper_2015.metadata.json",
+                        "last_modified": "2022-01-19T15:57:49.000Z",
+                    },
+                ),
+            ]
+
+            manifests = []
+            for offset in [0, 1]:
+                manifest = copy.deepcopy(load_json_fixture("release_manifest.json"))
+                manifest["images"][0]["id"] += offset
+                manifests.append(manifest)
+
+            with mock.patch.object(core, "fetch_json", side_effect=manifests):
+                for plan in plans:
+                    core.sync_release_from_plan(conn, plan, raw_dir=None)
+
+            text_args = argparse.Namespace(
+                db=db_path,
+                query="MB005B",
+                release=None,
+                source_kind="manifest",
+                limit=10,
+                json=True,
+            )
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                cli.cmd_search_text(text_args)
+            rows = json.loads(stdout.getvalue())
+            self.assertEqual(len(rows), 2)
+            self.assertEqual({row["release"] for row in rows}, {"MB Paper 2014", "MB Paper 2015"})
 
 
 if __name__ == "__main__":

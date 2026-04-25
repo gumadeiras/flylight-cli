@@ -38,6 +38,7 @@ flylight sync --all
 flylight sync --all --force
 flylight sync --release 'Descending Neurons 2018' --workers 8
 flylight search --expressed-in DNp04 --ad 31B08 --source-kind line-metadata
+flylight search-text 'DNp04 AND 31B08'
 flylight search-images --area Brain --objective 20x --robot-id 3007645
 flylight show-line SS00724 --release 'Descending Neurons 2018'
 flylight show-image 6878306
@@ -55,6 +56,7 @@ flylight export-ndjson --entity release
 - CGI summary enriches line-level fields like expressed-in, genotype, AD, DBD.
 - line/image exports include normalized arrays alongside text fields.
 - `search` supports field filters over line metadata: AD, DBD, genotype, expressed-in, robot-id, source-kind.
+- `search-text` uses SQLite FTS for faster boolean/full-text matching over line text fields.
 - `search-images` supports field filters over image metadata: area, objective, gender, robot-id, roi.
 - local db path: `data/janelia_splitgal4.sqlite`
 - raw manifest cache: `data/raw_manifests/*.json`

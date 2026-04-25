@@ -5,7 +5,6 @@ import json
 import re
 import sqlite3
 from collections import defaultdict
-from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -16,7 +15,9 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
+from .db import connect_db, ensure_parent, refresh_release_fts
 from .normalize import normalize_image_record, normalize_line_record, normalize_release_record
+from .records import asset_urls_from_image, get_db_stats, get_image_record, get_image_records, get_line_record, get_release_record, get_release_records
 
 
 BUCKET = "janelia-flylight-imagery"
@@ -24,7 +25,7 @@ S3_HTTP_ROOT = f"https://s3.amazonaws.com/{BUCKET}"
 S3_LIST_ROOT = f"{S3_HTTP_ROOT}/"
 SPLITGAL4_SUMMARY_URL = "https://splitgal4.janelia.org/cgi-bin/splitgal4_summary.cgi"
 NS = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
-USER_AGENT = "flylight-cli/0.2"
+USER_AGENT = "flylight-cli/0.3"
 DEFAULT_DB = Path("data/janelia_splitgal4.sqlite")
 DEFAULT_RAW_DIR = Path("data/raw_manifests")
 DEFAULT_WORKERS = 12
@@ -54,10 +55,6 @@ def md5_text(text: str) -> str:
 
 def json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=True, sort_keys=True)
-
-
-def ensure_parent(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
 
 
 def safe_slug(text: str) -> str:
@@ -274,83 +271,6 @@ def plan_release(release: str, include_html_fallback: bool = True, workers: int 
     )
 
 
-def connect_db(path: Path) -> sqlite3.Connection:
-    ensure_parent(path)
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    init_db(conn)
-    return conn
-
-
-def ensure_column(conn: sqlite3.Connection, table: str, column: str, spec: str) -> None:
-    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
-    if column not in existing:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {spec}")
-
-
-def init_db(conn: sqlite3.Connection) -> None:
-    conn.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS releases (
-          name TEXT PRIMARY KEY,
-          manifest_key TEXT NOT NULL,
-          manifest_url TEXT NOT NULL,
-          publication_json TEXT,
-          line_count INTEGER NOT NULL,
-          image_count INTEGER NOT NULL,
-          synced_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS line_releases (
-          release TEXT NOT NULL,
-          line TEXT NOT NULL,
-          image_count INTEGER NOT NULL,
-          sample_count INTEGER NOT NULL,
-          annotations_text TEXT NOT NULL,
-          rois_text TEXT NOT NULL,
-          robot_ids_text TEXT NOT NULL,
-          PRIMARY KEY (release, line),
-          FOREIGN KEY (release) REFERENCES releases(name) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS images (
-          image_id INTEGER PRIMARY KEY,
-          release TEXT NOT NULL,
-          line TEXT NOT NULL,
-          robot_id TEXT,
-          slide_code TEXT,
-          objective TEXT,
-          area TEXT,
-          tile TEXT,
-          gender TEXT,
-          roi TEXT,
-          annotations_text TEXT NOT NULL,
-          raw_json TEXT NOT NULL,
-          FOREIGN KEY (release) REFERENCES releases(name) ON DELETE CASCADE
-        );
-        """
-    )
-    ensure_column(conn, "releases", "source_kind", "source_kind TEXT NOT NULL DEFAULT 'manifest'")
-    ensure_column(conn, "releases", "source_locator", "source_locator TEXT NOT NULL DEFAULT ''")
-    ensure_column(conn, "releases", "source_token", "source_token TEXT NOT NULL DEFAULT ''")
-    ensure_column(conn, "line_releases", "expressed_in_text", "expressed_in_text TEXT NOT NULL DEFAULT ''")
-    ensure_column(conn, "line_releases", "genotype_text", "genotype_text TEXT NOT NULL DEFAULT ''")
-    ensure_column(conn, "line_releases", "ad_text", "ad_text TEXT NOT NULL DEFAULT ''")
-    ensure_column(conn, "line_releases", "dbd_text", "dbd_text TEXT NOT NULL DEFAULT ''")
-    ensure_column(conn, "images", "metadata_key", "metadata_key TEXT")
-    ensure_column(conn, "images", "metadata_url", "metadata_url TEXT")
-    conn.executescript(
-        """
-        CREATE INDEX IF NOT EXISTS idx_line_releases_line ON line_releases(line);
-        CREATE INDEX IF NOT EXISTS idx_images_line ON images(line);
-        CREATE INDEX IF NOT EXISTS idx_images_release_line ON images(release, line);
-        CREATE INDEX IF NOT EXISTS idx_images_roi ON images(roi);
-        """
-    )
-
-
 @dataclass
 class LineAggregate:
     image_count: int = 0
@@ -543,6 +463,7 @@ def store_release(
             """,
             image_rows,
         )
+        refresh_release_fts(conn, release)
 
     return {
         "release": release,
@@ -610,139 +531,3 @@ def sync_release_from_plan(
 def should_skip_incremental(conn: sqlite3.Connection, release: str, token: str) -> bool:
     row = conn.execute("SELECT source_token FROM releases WHERE name = ?", (release,)).fetchone()
     return row is not None and row["source_token"] == token
-
-
-def asset_urls_from_image(release: str, line: str, payload: dict[str, Any]) -> list[str]:
-    urls = []
-    for value in payload.values():
-        if not isinstance(value, str):
-            continue
-        lower = value.lower()
-        if lower.endswith((".png", ".mp4", ".h5j", ".lsm", ".lsm.bz2", ".json")):
-            if value.startswith(("http://", "https://")):
-                urls.append(value)
-            else:
-                urls.append(s3_url_for_key(f"{release}/{line}/{value}"))
-    return sorted(set(urls))
-
-
-def get_image_records(
-    conn: sqlite3.Connection,
-    release: str,
-    line: str,
-    include_raw: bool = False,
-) -> list[dict[str, Any]]:
-    rows = [
-        dict(row)
-        for row in conn.execute(
-            """
-            SELECT image_id, release, line, robot_id, slide_code, objective, area, tile, gender, roi,
-                   annotations_text, metadata_key, metadata_url, raw_json
-            FROM images
-            WHERE release = ? AND line = ?
-            ORDER BY slide_code, image_id
-            """,
-            (release, line),
-        )
-    ]
-    result = []
-    for row in rows:
-        payload = json.loads(row.pop("raw_json"))
-        row["asset_urls"] = asset_urls_from_image(release, line, payload)
-        if include_raw:
-            row["raw"] = payload
-        result.append(normalize_image_record(row, payload))
-    return result
-
-
-def get_image_record(conn: sqlite3.Connection, image_id: int, include_raw: bool = False) -> dict[str, Any]:
-    row = conn.execute(
-        """
-        SELECT i.image_id, i.release, i.line, i.robot_id, i.slide_code, i.objective, i.area, i.tile, i.gender, i.roi,
-               i.annotations_text, i.metadata_key, i.metadata_url, i.raw_json, r.source_kind
-        FROM images i
-        JOIN releases r ON r.name = i.release
-        WHERE i.image_id = ?
-        """,
-        (image_id,),
-    ).fetchone()
-    if row is None:
-        raise SystemExit(f"no image found: {image_id}")
-    record = dict(row)
-    payload = json.loads(record.pop("raw_json"))
-    record["asset_urls"] = asset_urls_from_image(record["release"], record["line"], payload)
-    if include_raw:
-        record["raw"] = payload
-    return normalize_image_record(record, payload)
-
-
-def get_line_record(
-    conn: sqlite3.Connection,
-    release: str,
-    line: str,
-    include_raw: bool = False,
-) -> dict[str, Any]:
-    row = conn.execute(
-        """
-        SELECT lr.release, lr.line, lr.image_count, lr.sample_count, lr.annotations_text, lr.rois_text,
-               lr.robot_ids_text, lr.expressed_in_text, lr.genotype_text, lr.ad_text, lr.dbd_text,
-               r.source_kind, r.source_locator, r.source_token
-        FROM line_releases lr
-        JOIN releases r ON r.name = lr.release
-        WHERE lr.release = ? AND lr.line = ?
-        """,
-        (release, line),
-    ).fetchone()
-    if row is None:
-        raise SystemExit(f"no line found: {line} in {release}")
-    record = normalize_line_record(dict(row))
-    record["images"] = get_image_records(conn, release, line, include_raw=include_raw)
-    return record
-
-
-def get_release_records(
-    conn: sqlite3.Connection,
-    release: str | None = None,
-    limit: int | None = None,
-) -> list[dict[str, Any]]:
-    clauses = ["1=1"]
-    params: list[Any] = []
-    if release:
-        clauses.append("name = ?")
-        params.append(release)
-    sql = f"""
-        SELECT name, manifest_key, manifest_url, publication_json, line_count, image_count, synced_at,
-               source_kind, source_locator, source_token
-        FROM releases
-        WHERE {' AND '.join(clauses)}
-        ORDER BY name
-    """
-    if limit is not None:
-        sql += " LIMIT ?"
-        params.append(limit)
-    rows = [dict(row) for row in conn.execute(sql, params)]
-    result = []
-    for row in rows:
-        publication = json.loads(row.pop("publication_json"))
-        row["release"] = row.pop("name")
-        result.append(normalize_release_record(row, publication))
-    return result
-
-
-def get_release_record(conn: sqlite3.Connection, release: str) -> dict[str, Any]:
-    rows = get_release_records(conn, release=release, limit=1)
-    if not rows:
-        raise SystemExit(f"no release found: {release}")
-    return rows[0]
-
-
-def get_db_stats(conn: sqlite3.Connection, release: str | None = None) -> dict[str, Any]:
-    releases = get_release_records(conn, release=release)
-    source_kinds = Counter(item["source_kind"] for item in releases)
-    return {
-        "release_count": len(releases),
-        "line_count": sum(int(item["line_count"]) for item in releases),
-        "image_count": sum(int(item["image_count"]) for item in releases),
-        "source_kinds": dict(sorted(source_kinds.items())),
-        "releases": releases,
-    }

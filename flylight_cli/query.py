@@ -93,3 +93,24 @@ def build_image_search_sql(args: Any) -> tuple[str, list[Any]]:
     """
     params.append(getattr(args, "limit"))
     return sql, params
+
+
+def build_line_text_search_sql(args: Any) -> tuple[str, list[Any]]:
+    clauses = ["line_search_fts MATCH ?"]
+    params: list[Any] = [getattr(args, "query")]
+    add_eq_clause(clauses, params, "lr.release", getattr(args, "release", None))
+    add_eq_clause(clauses, params, "r.source_kind", getattr(args, "source_kind", None))
+    sql = f"""
+      SELECT lr.release, lr.line, lr.image_count, lr.sample_count, lr.annotations_text, lr.rois_text,
+             lr.robot_ids_text, lr.expressed_in_text, lr.genotype_text, lr.ad_text, lr.dbd_text,
+             r.source_kind, r.source_locator, r.source_token,
+             bm25(line_search_fts, 5.0, 1.5, 1.5, 1.0, 1.0, 1.0, 1.0, 1.0) AS rank
+      FROM line_search_fts
+      JOIN line_releases lr ON lr.release = line_search_fts.release AND lr.line = line_search_fts.line
+      JOIN releases r ON r.name = lr.release
+      WHERE {' AND '.join(clauses)}
+      ORDER BY rank, lr.line, lr.release
+      LIMIT ?
+    """
+    params.append(getattr(args, "limit"))
+    return sql, params
