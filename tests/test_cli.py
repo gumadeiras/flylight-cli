@@ -302,7 +302,7 @@ class FlylightCliTests(unittest.TestCase):
             self.assertEqual(len(release_payload["lines"]), 1)
             self.assertEqual(release_payload["lines"][0]["line"], "MB005B")
 
-    def test_search_text(self) -> None:
+    def test_search_text_and_compare_line(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "compare.sqlite"
             conn = core.connect_db(db_path)
@@ -352,6 +352,17 @@ class FlylightCliTests(unittest.TestCase):
             rows = json.loads(stdout.getvalue())
             self.assertEqual(len(rows), 2)
             self.assertEqual({row["release"] for row in rows}, {"MB Paper 2014", "MB Paper 2015"})
+
+            compare_args = argparse.Namespace(db=db_path, line="MB005B", release=None, json=True)
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                cli.cmd_compare_line(compare_args)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["release_count"], 2)
+            self.assertEqual(
+                set(payload["shared"]["genotype_parts"]),
+                {"13F02-p65ADZp in attP40/CyO", "34A03-ZpGdbd in attP2", "w"},
+            )
+            self.assertEqual(len(payload["releases"]), 2)
 
 
 if __name__ == "__main__":

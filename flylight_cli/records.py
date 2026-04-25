@@ -156,6 +156,23 @@ def get_release_record(conn: sqlite3.Connection, release: str) -> dict[str, Any]
     return rows[0]
 
 
+def compare_line_records(conn: sqlite3.Connection, line: str, releases: list[str] | None = None) -> dict[str, Any]:
+    matches = get_line_matches(conn, line, releases=releases)
+    if not matches:
+        raise SystemExit(f"no line found: {line}")
+    records = [get_line_record(conn, item["release"], item["line"], include_raw=False) for item in matches]
+    shared_fields = {}
+    for field in ["annotations", "rois", "robot_ids", "expressed_in", "genotype_parts", "ad_parts", "dbd_parts"]:
+        sets = [set(record[field]) for record in records]
+        shared_fields[field] = sorted(set.intersection(*sets)) if sets else []
+    return {
+        "line": line,
+        "release_count": len(records),
+        "shared": shared_fields,
+        "releases": records,
+    }
+
+
 def get_db_stats(conn: sqlite3.Connection, release: str | None = None) -> dict[str, Any]:
     releases = get_release_records(conn, release=release)
     source_kinds = Counter(item["source_kind"] for item in releases)

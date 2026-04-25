@@ -42,6 +42,7 @@ flylight search-text 'DNp04 AND 31B08'
 flylight search-images --area Brain --objective 20x --robot-id 3007645
 flylight show-line SS00724 --release 'Descending Neurons 2018'
 flylight show-image 6878306
+flylight compare-line MB005B
 flylight show-release 'MB Paper 2014' --include-lines --genotype 34A03
 flylight stats
 flylight export-ndjson --entity line --release 'Descending Neurons 2018'
@@ -58,5 +59,6 @@ flylight export-ndjson --entity release
 - `search` supports field filters over line metadata: AD, DBD, genotype, expressed-in, robot-id, source-kind.
 - `search-text` uses SQLite FTS for faster boolean/full-text matching over line text fields.
 - `search-images` supports field filters over image metadata: area, objective, gender, robot-id, roi.
+- `compare-line` shows shared fields for the same line across synced releases.
 - local db path: `data/janelia_splitgal4.sqlite`
 - raw manifest cache: `data/raw_manifests/*.json`

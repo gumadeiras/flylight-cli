@@ -23,6 +23,7 @@ from .normalize import normalize_line_record
 from .query import build_image_search_sql, build_line_search_sql, build_line_text_search_sql
 from .records import (
     asset_urls_from_image,
+    compare_line_records,
     get_db_stats,
     get_image_record,
     get_line_matches,
@@ -185,6 +186,30 @@ def cmd_show_image(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_compare_line(args: argparse.Namespace) -> int:
+    conn = connect_db(args.db)
+    result = compare_line_records(conn, args.line, releases=args.release)
+    if args.json:
+        print(json.dumps(result, indent=2))
+        return 0
+    print(f"line={result['line']}\treleases={result['release_count']}")
+    for field, values in result["shared"].items():
+        if values:
+            print(f"shared_{field}\t{' | '.join(values)}")
+    for row in result["releases"]:
+        print(
+            "\t".join(
+                [
+                    row["release"],
+                    row["source_kind"],
+                    f"images={row['image_count']}",
+                    f"samples={row['sample_count']}",
+                ]
+            )
+        )
+    return 0
+
+
 def cmd_stats(args: argparse.Namespace) -> int:
     conn = connect_db(args.db)
     payload = get_db_stats(conn, release=args.release)
@@ -336,6 +361,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--db", type=Path, default=DEFAULT_DB)
     p.add_argument("--raw", action="store_true", help="include raw image payload")
     p.set_defaults(func=cmd_show_image)
+
+    p = sub.add_parser("compare-line", help="compare one line across releases")
+    p.add_argument("line")
+    p.add_argument("--db", type=Path, default=DEFAULT_DB)
+    p.add_argument("--release", action="append", help="limit comparison to specific releases")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_compare_line)
 
     p = sub.add_parser("show-release", help="show one release with optional embedded lines")
     p.add_argument("release")
