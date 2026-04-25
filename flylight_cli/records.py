@@ -156,6 +156,39 @@ def get_release_record(conn: sqlite3.Connection, release: str) -> dict[str, Any]
     return rows[0]
 
 
+def get_release_line_rows(conn: sqlite3.Connection, release: str) -> dict[str, dict[str, Any]]:
+    rows = [
+        normalize_line_record(dict(row))
+        for row in conn.execute(
+            """
+            SELECT lr.release, lr.line, lr.image_count, lr.sample_count, lr.annotations_text, lr.rois_text,
+                   lr.robot_ids_text, lr.expressed_in_text, lr.genotype_text, lr.ad_text, lr.dbd_text,
+                   r.source_kind, r.source_locator, r.source_token
+            FROM line_releases lr
+            JOIN releases r ON r.name = lr.release
+            WHERE lr.release = ?
+            ORDER BY lr.line
+            """,
+            (release,),
+        )
+    ]
+    return {row["line"]: row for row in rows}
+
+
+def comparable_line_fields(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "image_count": record["image_count"],
+        "sample_count": record["sample_count"],
+        "annotations": record["annotations"],
+        "rois": record["rois"],
+        "robot_ids": record["robot_ids"],
+        "expressed_in": record["expressed_in"],
+        "genotype_parts": record["genotype_parts"],
+        "ad_parts": record["ad_parts"],
+        "dbd_parts": record["dbd_parts"],
+    }
+
+
 def compare_line_records(conn: sqlite3.Connection, line: str, releases: list[str] | None = None) -> dict[str, Any]:
     matches = get_line_matches(conn, line, releases=releases)
     if not matches:
@@ -171,6 +204,59 @@ def compare_line_records(conn: sqlite3.Connection, line: str, releases: list[str
         "shared": shared_fields,
         "releases": records,
     }
+
+
+def compare_release_records(
+    conn: sqlite3.Connection,
+    left_release: str,
+    right_release: str,
+    include_lines: bool = False,
+) -> dict[str, Any]:
+    left = get_release_record(conn, left_release)
+    right = get_release_record(conn, right_release)
+    left_rows = get_release_line_rows(conn, left_release)
+    right_rows = get_release_line_rows(conn, right_release)
+
+    left_lines = set(left_rows)
+    right_lines = set(right_rows)
+    added_lines = sorted(right_lines - left_lines)
+    removed_lines = sorted(left_lines - right_lines)
+    common_lines = sorted(left_lines & right_lines)
+    changed_lines = [
+        line for line in common_lines if comparable_line_fields(left_rows[line]) != comparable_line_fields(right_rows[line])
+    ]
+    unchanged_lines = [line for line in common_lines if line not in changed_lines]
+
+    result = {
+        "left_release": left,
+        "right_release": right,
+        "summary": {
+            "left_line_count": len(left_lines),
+            "right_line_count": len(right_lines),
+            "added_count": len(added_lines),
+            "removed_count": len(removed_lines),
+            "changed_count": len(changed_lines),
+            "unchanged_count": len(unchanged_lines),
+        },
+        "added_lines": added_lines,
+        "removed_lines": removed_lines,
+        "changed_lines": changed_lines,
+        "unchanged_lines": unchanged_lines,
+    }
+
+    if include_lines:
+        result["added_records"] = [get_line_record(conn, right_release, line, include_raw=False) for line in added_lines]
+        result["removed_records"] = [get_line_record(conn, left_release, line, include_raw=False) for line in removed_lines]
+        result["changed_records"] = [
+            {
+                "line": line,
+                "left": get_line_record(conn, left_release, line, include_raw=False),
+                "right": get_line_record(conn, right_release, line, include_raw=False),
+            }
+            for line in changed_lines
+        ]
+
+    return result
 
 
 def get_db_stats(conn: sqlite3.Connection, release: str | None = None) -> dict[str, Any]:

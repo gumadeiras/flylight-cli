@@ -364,6 +364,79 @@ class FlylightCliTests(unittest.TestCase):
             )
             self.assertEqual(len(payload["releases"]), 2)
 
+    def test_compare_release(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "release-diff.sqlite"
+            conn = core.connect_db(db_path)
+
+            left_manifest = copy.deepcopy(load_json_fixture("release_manifest.json"))
+            right_manifest = copy.deepcopy(load_json_fixture("release_manifest.json"))
+            right_manifest["images"][0]["id"] = 6878307
+            right_manifest["images"][0]["genotype"] = "w; changed-ad; changed-dbd"
+            right_manifest["lines"].append("MB999Z")
+            right_manifest["images"].append(
+                {
+                    "id": 9990001,
+                    "line": "MB999Z",
+                    "robot_id": "9999999",
+                    "slide_code": "20140410_01_A1",
+                    "objective": "40x",
+                    "area": "Brain",
+                    "tile": "brain",
+                    "gender": "m",
+                    "roi": "gamma1",
+                    "genotype": "w; added-line",
+                    "multichannel_mip": "MB999Z-20140410_01_A1-m-40x-brain-Split_GAL4-multichannel_mip.png",
+                    "unaligned_stack": "MB999Z-20140410_01_A1-m-40x-brain-Split_GAL4-unaligned_stack.h5j",
+                }
+            )
+
+            plans = [
+                core.ReleasePlan(
+                    release="MB Paper 2014",
+                    source_kind="manifest",
+                    source_locator="MB Paper 2014/MB_Paper_2014.metadata.json",
+                    source_token="manifest-left",
+                    manifest_object={
+                        "key": "MB Paper 2014/MB_Paper_2014.metadata.json",
+                        "last_modified": "2022-01-18T15:57:49.000Z",
+                    },
+                ),
+                core.ReleasePlan(
+                    release="MB Paper 2015",
+                    source_kind="manifest",
+                    source_locator="MB Paper 2015/MB_Paper_2015.metadata.json",
+                    source_token="manifest-right",
+                    manifest_object={
+                        "key": "MB Paper 2015/MB_Paper_2015.metadata.json",
+                        "last_modified": "2022-01-19T15:57:49.000Z",
+                    },
+                ),
+            ]
+
+            with mock.patch.object(core, "fetch_json", side_effect=[left_manifest, right_manifest]):
+                for plan in plans:
+                    core.sync_release_from_plan(conn, plan, raw_dir=None)
+
+            args = argparse.Namespace(
+                db=db_path,
+                left_release="MB Paper 2014",
+                right_release="MB Paper 2015",
+                include_lines=True,
+                json=True,
+            )
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                cli.cmd_compare_release(args)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["summary"]["added_count"], 1)
+            self.assertEqual(payload["summary"]["removed_count"], 0)
+            self.assertEqual(payload["summary"]["changed_count"], 1)
+            self.assertEqual(payload["added_lines"], ["MB999Z"])
+            self.assertEqual(payload["changed_lines"], ["MB005B"])
+            self.assertEqual(payload["added_records"][0]["line"], "MB999Z")
+            self.assertEqual(payload["changed_records"][0]["left"]["line"], "MB005B")
+            self.assertEqual(payload["changed_records"][0]["right"]["genotype_text"], "w; changed-ad; changed-dbd")
+
 
 if __name__ == "__main__":
     unittest.main()

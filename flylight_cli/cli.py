@@ -24,6 +24,7 @@ from .query import build_image_search_sql, build_line_search_sql, build_line_tex
 from .records import (
     asset_urls_from_image,
     compare_line_records,
+    compare_release_records,
     get_db_stats,
     get_image_record,
     get_line_matches,
@@ -210,6 +211,36 @@ def cmd_compare_line(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_compare_release(args: argparse.Namespace) -> int:
+    conn = connect_db(args.db)
+    result = compare_release_records(
+        conn,
+        left_release=args.left_release,
+        right_release=args.right_release,
+        include_lines=args.include_lines,
+    )
+    if args.json:
+        print(json.dumps(result, indent=2))
+        return 0
+    summary = result["summary"]
+    print(
+        "\t".join(
+            [
+                result["left_release"]["release"],
+                result["right_release"]["release"],
+                f"added={summary['added_count']}",
+                f"removed={summary['removed_count']}",
+                f"changed={summary['changed_count']}",
+                f"unchanged={summary['unchanged_count']}",
+            ]
+        )
+    )
+    for label in ["added_lines", "removed_lines", "changed_lines"]:
+        if result[label]:
+            print(f"{label}\t{' | '.join(result[label])}")
+    return 0
+
+
 def cmd_stats(args: argparse.Namespace) -> int:
     conn = connect_db(args.db)
     payload = get_db_stats(conn, release=args.release)
@@ -368,6 +399,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--release", action="append", help="limit comparison to specific releases")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_compare_line)
+
+    p = sub.add_parser("compare-release", help="compare two synced releases")
+    p.add_argument("left_release")
+    p.add_argument("right_release")
+    p.add_argument("--db", type=Path, default=DEFAULT_DB)
+    p.add_argument("--include-lines", action="store_true")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_compare_release)
 
     p = sub.add_parser("show-release", help="show one release with optional embedded lines")
     p.add_argument("release")
