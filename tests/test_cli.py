@@ -503,6 +503,70 @@ class FlylightCliTests(unittest.TestCase):
             self.assertEqual(payload["changed_records"][0]["left"]["line"], "MB005B")
             self.assertEqual(payload["changed_records"][0]["right"]["genotype_text"], "w; changed-ad; changed-dbd")
 
+    def test_snapshot_export_import_roundtrip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_root = Path(tmpdir) / "source"
+            import_root = Path(tmpdir) / "imported"
+            db_path = source_root / "data.sqlite"
+            raw_dir = source_root / "raw"
+            cache_dir = source_root / "cache"
+            archive_path = Path(tmpdir) / "snapshot.tar.gz"
+
+            conn = core.connect_db(db_path)
+            plan = core.ReleasePlan(
+                release="MB Paper 2014",
+                source_kind="manifest",
+                source_locator="MB Paper 2014/MB_Paper_2014.metadata.json",
+                source_token="manifest-token",
+                manifest_object={
+                    "key": "MB Paper 2014/MB_Paper_2014.metadata.json",
+                    "last_modified": "2022-01-18T15:57:49.000Z",
+                },
+            )
+            with mock.patch.object(core, "fetch_json", return_value=load_json_fixture("release_manifest.json")):
+                core.sync_release_from_plan(conn, plan, raw_dir=raw_dir)
+            cache.write_cached_bytes(
+                core.s3_url_for_key("MB Paper 2014/MB_Paper_2014.metadata.json"),
+                json.dumps(load_json_fixture("release_manifest.json")).encode("utf-8"),
+                cache_dir=cache_dir,
+            )
+
+            export_args = argparse.Namespace(
+                db=db_path,
+                raw_dir=raw_dir,
+                cache_dir=cache_dir,
+                out=archive_path,
+                json=True,
+            )
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                cli.cmd_snapshot_export(export_args)
+            export_payload = json.loads(stdout.getvalue())
+            self.assertEqual(export_payload["db_present"], True)
+            self.assertEqual(export_payload["raw_file_count"], 1)
+            self.assertEqual(export_payload["cache_entries"], 1)
+
+            import_args = argparse.Namespace(
+                archive=archive_path,
+                db=import_root / "restored.sqlite",
+                raw_dir=import_root / "raw",
+                cache_dir=import_root / "cache",
+                force=False,
+                json=True,
+            )
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                cli.cmd_snapshot_import(import_args)
+            import_payload = json.loads(stdout.getvalue())
+            self.assertEqual(import_payload["imported"]["db"], True)
+            self.assertEqual(import_payload["imported"]["raw_files"], 1)
+            self.assertEqual(import_payload["imported"]["cache_files"], 2)
+
+            restored_conn = core.connect_db(import_args.db)
+            restored_record = core.get_line_record(restored_conn, "MB Paper 2014", "MB005B")
+            self.assertEqual(restored_record["line"], "MB005B")
+            self.assertTrue((import_args.raw_dir / "mb_paper_2014.json").exists())
+            imported_cache_stats = cache.cache_stats(import_args.cache_dir)
+            self.assertEqual(imported_cache_stats["entries"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

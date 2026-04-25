@@ -33,6 +33,7 @@ from .records import (
     get_release_record,
     get_release_records,
 )
+from .snapshot import export_snapshot, import_snapshot
 
 
 def apply_cache_args(args: argparse.Namespace) -> None:
@@ -122,6 +123,49 @@ def cmd_cache_info(args: argparse.Namespace) -> int:
         print(json.dumps(payload, indent=2))
         return 0
     print("\t".join([payload["cache_dir"], f"entries={payload['entries']}", f"bytes={payload['bytes']}"]))
+    return 0
+
+
+def cmd_snapshot_export(args: argparse.Namespace) -> int:
+    payload = export_snapshot(args.out, db_path=args.db, raw_dir=args.raw_dir, cache_dir=args.cache_dir)
+    if args.json:
+        print(json.dumps(payload, indent=2))
+        return 0
+    print(
+        "\t".join(
+            [
+                payload["archive_path"],
+                f"db={payload['db_present']}",
+                f"raw_files={payload['raw_file_count']}",
+                f"cache_entries={payload['cache_entries']}",
+            ]
+        )
+    )
+    return 0
+
+
+def cmd_snapshot_import(args: argparse.Namespace) -> int:
+    payload = import_snapshot(
+        args.archive,
+        db_path=args.db,
+        raw_dir=args.raw_dir,
+        cache_dir=args.cache_dir,
+        force=args.force,
+    )
+    if args.json:
+        print(json.dumps(payload, indent=2))
+        return 0
+    imported = payload["imported"]
+    print(
+        "\t".join(
+            [
+                payload["archive_path"],
+                f"db={imported['db']}",
+                f"raw_files={imported['raw_files']}",
+                f"cache_files={imported['cache_files']}",
+            ]
+        )
+    )
     return 0
 
 
@@ -376,6 +420,23 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_cache_info)
+
+    p = sub.add_parser("snapshot-export", help="bundle db, raw manifests, and HTTP cache for offline reuse")
+    p.add_argument("--db", type=Path, default=DEFAULT_DB)
+    p.add_argument("--raw-dir", type=Path, default=DEFAULT_RAW_DIR)
+    p.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
+    p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_snapshot_export)
+
+    p = sub.add_parser("snapshot-import", help="restore db, raw manifests, and HTTP cache from a snapshot")
+    p.add_argument("archive", type=Path)
+    p.add_argument("--db", type=Path, default=DEFAULT_DB)
+    p.add_argument("--raw-dir", type=Path, default=DEFAULT_RAW_DIR)
+    p.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
+    p.add_argument("--force", action="store_true", help="overwrite an existing target db")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_snapshot_import)
 
     p = sub.add_parser("search", help="search synced line records")
     p.add_argument("--db", type=Path, default=DEFAULT_DB)
