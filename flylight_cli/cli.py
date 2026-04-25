@@ -26,6 +26,8 @@ from .records import (
     asset_urls_from_image,
     compare_line_records,
     compare_release_records,
+    export_compare_line_rows,
+    export_compare_release_rows,
     get_db_stats,
     get_image_record,
     get_line_matches,
@@ -356,6 +358,12 @@ def write_ndjson(rows: list[dict[str, Any]], out: TextIO) -> None:
         out.write(json_dumps(row) + "\n")
 
 
+def require_arg(value: Any, flag: str) -> Any:
+    if value in (None, "", []):
+        raise SystemExit(f"choose {flag}")
+    return value
+
+
 def cmd_export_ndjson(args: argparse.Namespace) -> int:
     conn = connect_db(args.db)
     out_handle: TextIO
@@ -382,8 +390,22 @@ def cmd_export_ndjson(args: argparse.Namespace) -> int:
                     row["raw"] = raw
                 payload.append(normalize_image_record(row, raw))
             write_ndjson(payload, out_handle)
-        else:
+        elif args.entity == "release":
             payload = get_release_records(conn, release=args.release, limit=args.limit)
+            write_ndjson(payload, out_handle)
+        elif args.entity == "compare-line":
+            line = require_arg(args.line, "--line")
+            payload = export_compare_line_rows(conn, line=line, releases=args.release, include_records=args.raw)
+            write_ndjson(payload, out_handle)
+        else:
+            left_release = require_arg(args.left_release, "--left-release")
+            right_release = require_arg(args.right_release, "--right-release")
+            payload = export_compare_release_rows(
+                conn,
+                left_release=left_release,
+                right_release=right_release,
+                include_records=args.raw,
+            )
             write_ndjson(payload, out_handle)
     finally:
         if args.out:
@@ -539,9 +561,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("export-ndjson", help="export line or image records for agent ingest")
     p.add_argument("--db", type=Path, default=DEFAULT_DB)
-    p.add_argument("--entity", choices=["line", "image", "release"], default="line")
+    p.add_argument("--entity", choices=["line", "image", "release", "compare-line", "compare-release"], default="line")
     p.add_argument("--release")
     p.add_argument("--line")
+    p.add_argument("--left-release")
+    p.add_argument("--right-release")
     p.add_argument("--annotation")
     p.add_argument("--roi")
     p.add_argument("--robot-id")

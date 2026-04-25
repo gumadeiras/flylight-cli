@@ -206,6 +206,31 @@ def compare_line_records(conn: sqlite3.Connection, line: str, releases: list[str
     }
 
 
+def export_compare_line_rows(
+    conn: sqlite3.Connection,
+    line: str,
+    releases: list[str] | None = None,
+    include_records: bool = False,
+) -> list[dict[str, Any]]:
+    result = compare_line_records(conn, line, releases=releases)
+    rows = []
+    for record in result["releases"]:
+        row = {
+            "entity": "compare-line",
+            "line": line,
+            "release_count": result["release_count"],
+            "shared": result["shared"],
+            "release": record["release"],
+            "source_kind": record["source_kind"],
+            "image_count": record["image_count"],
+            "sample_count": record["sample_count"],
+        }
+        if include_records:
+            row["record"] = record
+        rows.append(row)
+    return rows
+
+
 def compare_release_records(
     conn: sqlite3.Connection,
     left_release: str,
@@ -257,6 +282,69 @@ def compare_release_records(
         ]
 
     return result
+
+
+def export_compare_release_rows(
+    conn: sqlite3.Connection,
+    left_release: str,
+    right_release: str,
+    include_records: bool = False,
+) -> list[dict[str, Any]]:
+    result = compare_release_records(conn, left_release, right_release, include_lines=include_records)
+    rows: list[dict[str, Any]] = [
+        {
+            "entity": "compare-release-summary",
+            "left_release": result["left_release"]["release"],
+            "right_release": result["right_release"]["release"],
+            **result["summary"],
+        }
+    ]
+    for line in result["added_lines"]:
+        row = {
+            "entity": "compare-release-line",
+            "status": "added",
+            "line": line,
+            "left_release": result["left_release"]["release"],
+            "right_release": result["right_release"]["release"],
+        }
+        if include_records:
+            row["record"] = next(item for item in result["added_records"] if item["line"] == line)
+        rows.append(row)
+    for line in result["removed_lines"]:
+        row = {
+            "entity": "compare-release-line",
+            "status": "removed",
+            "line": line,
+            "left_release": result["left_release"]["release"],
+            "right_release": result["right_release"]["release"],
+        }
+        if include_records:
+            row["record"] = next(item for item in result["removed_records"] if item["line"] == line)
+        rows.append(row)
+    for line in result["changed_lines"]:
+        row = {
+            "entity": "compare-release-line",
+            "status": "changed",
+            "line": line,
+            "left_release": result["left_release"]["release"],
+            "right_release": result["right_release"]["release"],
+        }
+        if include_records:
+            changed = next(item for item in result["changed_records"] if item["line"] == line)
+            row["left"] = changed["left"]
+            row["right"] = changed["right"]
+        rows.append(row)
+    for line in result["unchanged_lines"]:
+        rows.append(
+            {
+                "entity": "compare-release-line",
+                "status": "unchanged",
+                "line": line,
+                "left_release": result["left_release"]["release"],
+                "right_release": result["right_release"]["release"],
+            }
+        )
+    return rows
 
 
 def get_db_stats(conn: sqlite3.Connection, release: str | None = None) -> dict[str, Any]:

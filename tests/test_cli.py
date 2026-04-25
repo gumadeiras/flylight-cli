@@ -503,6 +503,41 @@ class FlylightCliTests(unittest.TestCase):
             self.assertEqual(payload["changed_records"][0]["left"]["line"], "MB005B")
             self.assertEqual(payload["changed_records"][0]["right"]["genotype_text"], "w; changed-ad; changed-dbd")
 
+            export_args = argparse.Namespace(
+                db=db_path,
+                entity="compare-release",
+                release=None,
+                line=None,
+                left_release="MB Paper 2014",
+                right_release="MB Paper 2015",
+                annotation=None,
+                roi=None,
+                robot_id=None,
+                expressed_in=None,
+                genotype=None,
+                ad=None,
+                dbd=None,
+                area=None,
+                objective=None,
+                gender=None,
+                source_kind=None,
+                min_images=None,
+                min_samples=None,
+                term=None,
+                limit=100,
+                raw=True,
+                out=None,
+            )
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                cli.cmd_export_ndjson(export_args)
+            rows = [json.loads(line) for line in stdout.getvalue().splitlines()]
+            self.assertEqual(rows[0]["entity"], "compare-release-summary")
+            self.assertEqual(rows[0]["changed_count"], 1)
+            added = next(row for row in rows if row.get("status") == "added")
+            changed = next(row for row in rows if row.get("status") == "changed")
+            self.assertEqual(added["line"], "MB999Z")
+            self.assertEqual(changed["left"]["line"], "MB005B")
+
     def test_snapshot_export_import_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             source_root = Path(tmpdir) / "source"
@@ -566,6 +601,39 @@ class FlylightCliTests(unittest.TestCase):
             self.assertTrue((import_args.raw_dir / "mb_paper_2014.json").exists())
             imported_cache_stats = cache.cache_stats(import_args.cache_dir)
             self.assertEqual(imported_cache_stats["entries"], 1)
+
+    def test_compare_line_export_requires_line(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "empty.sqlite"
+            core.connect_db(db_path)
+            args = argparse.Namespace(
+                db=db_path,
+                entity="compare-line",
+                release=None,
+                line=None,
+                left_release=None,
+                right_release=None,
+                annotation=None,
+                roi=None,
+                robot_id=None,
+                expressed_in=None,
+                genotype=None,
+                ad=None,
+                dbd=None,
+                area=None,
+                objective=None,
+                gender=None,
+                source_kind=None,
+                min_images=None,
+                min_samples=None,
+                term=None,
+                limit=100,
+                raw=False,
+                out=None,
+            )
+            with self.assertRaises(SystemExit) as exc:
+                cli.cmd_export_ndjson(args)
+            self.assertEqual(str(exc.exception), "choose --line")
 
 
 if __name__ == "__main__":
