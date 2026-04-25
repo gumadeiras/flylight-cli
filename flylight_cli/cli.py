@@ -14,7 +14,9 @@ from .core import (
     asset_urls_from_image,
     connect_db,
     ensure_parent,
+    get_db_stats,
     get_line_record,
+    get_release_records,
     json_dumps,
     list_releases,
     plan_release,
@@ -22,6 +24,7 @@ from .core import (
     should_skip_incremental,
     sync_release_from_plan,
 )
+from .normalize import normalize_image_record
 
 
 def cmd_releases(args: argparse.Namespace) -> int:
@@ -157,6 +160,37 @@ def cmd_show_line(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_stats(args: argparse.Namespace) -> int:
+    conn = connect_db(args.db)
+    payload = get_db_stats(conn, release=args.release)
+    if args.json:
+        print(json.dumps(payload, indent=2))
+        return 0
+    print(
+        "\t".join(
+            [
+                f"releases={payload['release_count']}",
+                f"lines={payload['line_count']}",
+                f"images={payload['image_count']}",
+            ]
+        )
+    )
+    for kind, count in payload["source_kinds"].items():
+        print(f"source_kind\t{kind}\t{count}")
+    for row in payload["releases"]:
+        print(
+            "\t".join(
+                [
+                    row["release"],
+                    row["source_kind"],
+                    f"lines={row['line_count']}",
+                    f"images={row['image_count']}",
+                ]
+            )
+        )
+    return 0
+
+
 def write_ndjson(rows: list[dict[str, Any]], out: TextIO) -> None:
     for row in rows:
         out.write(json_dumps(row) + "\n")
@@ -177,7 +211,7 @@ def cmd_export_ndjson(args: argparse.Namespace) -> int:
             rows = [dict(row) for row in conn.execute(sql, params)]
             payload = [get_line_record(conn, row["release"], row["line"], include_raw=args.raw) for row in rows]
             write_ndjson(payload, out_handle)
-        else:
+        elif args.entity == "image":
             clauses = ["1=1"]
             params: list[Any] = []
             if args.release:
@@ -211,7 +245,10 @@ def cmd_export_ndjson(args: argparse.Namespace) -> int:
                 row["asset_urls"] = asset_urls_from_image(row["release"], row["line"], raw)
                 if args.raw:
                     row["raw"] = raw
-                payload.append(row)
+                payload.append(normalize_image_record(row, raw))
+            write_ndjson(payload, out_handle)
+        else:
+            payload = get_release_records(conn, release=args.release, limit=args.limit)
             write_ndjson(payload, out_handle)
     finally:
         if args.out:
@@ -260,9 +297,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--raw", action="store_true", help="include raw image payloads")
     p.set_defaults(func=cmd_show_line)
 
+    p = sub.add_parser("stats", help="show counts for synced releases")
+    p.add_argument("--db", type=Path, default=DEFAULT_DB)
+    p.add_argument("--release")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_stats)
+
     p = sub.add_parser("export-ndjson", help="export line or image records for agent ingest")
     p.add_argument("--db", type=Path, default=DEFAULT_DB)
-    p.add_argument("--entity", choices=["line", "image"], default="line")
+    p.add_argument("--entity", choices=["line", "image", "release"], default="line")
     p.add_argument("--release")
     p.add_argument("--line")
     p.add_argument("--annotation")

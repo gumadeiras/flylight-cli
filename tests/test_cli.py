@@ -24,6 +24,24 @@ def load_text_fixture(name: str) -> str:
 
 
 class FlylightCliTests(unittest.TestCase):
+    def test_normalize_helpers_expand_agent_friendly_fields(self) -> None:
+        normalized = core.normalize_line_record(
+            {
+                "annotations_text": "A | B",
+                "rois_text": "alpha | beta",
+                "robot_ids_text": "1 | 2",
+                "expressed_in_text": "DNp04,DNp05",
+                "genotype_text": "w; a; b",
+                "ad_text": "a; b",
+                "dbd_text": "c; d",
+            }
+        )
+        self.assertEqual(normalized["annotations"], ["A", "B"])
+        self.assertEqual(normalized["rois"], ["alpha", "beta"])
+        self.assertEqual(normalized["robot_ids"], ["1", "2"])
+        self.assertEqual(normalized["expressed_in"], ["DNp04", "DNp05"])
+        self.assertEqual(normalized["genotype_parts"], ["w", "a", "b"])
+
     def test_parse_release_summary_html(self) -> None:
         rows = core.parse_release_summary_html(load_text_fixture("release_summary.html"))
         self.assertEqual(rows["SS00724"]["robot_id"], "3007645")
@@ -70,6 +88,7 @@ class FlylightCliTests(unittest.TestCase):
             row = json.loads(stdout.getvalue().strip())
             self.assertEqual(row["line"], "MB005B")
             self.assertEqual(row["image_id"], 6878306)
+            self.assertEqual(row["roi_terms"], ["alpha'/beta'ap", "alpha'/beta'm"])
             self.assertTrue(any(url.endswith("unaligned_stack.h5j") for url in row["asset_urls"]))
 
     def test_sync_line_metadata_release_with_html_enrichment(self) -> None:
@@ -113,6 +132,8 @@ class FlylightCliTests(unittest.TestCase):
 
             record = core.get_line_record(conn, "Descending Neurons 2018", "SS00724")
             self.assertEqual(record["robot_ids_text"], "3007645")
+            self.assertEqual(record["robot_ids"], ["3007645"])
+            self.assertEqual(record["expressed_in"], ["DNp04"])
             self.assertEqual(record["expressed_in_text"], "DNp04")
             self.assertIn("31B08-p65ADZp", record["ad_text"])
             self.assertIn("24A03-ZpGdbd", record["dbd_text"])
@@ -152,6 +173,50 @@ class FlylightCliTests(unittest.TestCase):
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["synced"], [])
             self.assertEqual(payload["skipped"][0]["reason"], "up_to_date")
+
+    def test_release_export_and_stats(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "release.sqlite"
+            conn = core.connect_db(db_path)
+            plan = core.ReleasePlan(
+                release="MB Paper 2014",
+                source_kind="manifest",
+                source_locator="MB Paper 2014/MB_Paper_2014.metadata.json",
+                source_token="manifest-token",
+                manifest_object={
+                    "key": "MB Paper 2014/MB_Paper_2014.metadata.json",
+                    "last_modified": "2022-01-18T15:57:49.000Z",
+                },
+            )
+
+            with mock.patch.object(core, "fetch_json", return_value=load_json_fixture("release_manifest.json")):
+                core.sync_release_from_plan(conn, plan, raw_dir=None)
+
+            export_args = argparse.Namespace(
+                db=db_path,
+                entity="release",
+                release="MB Paper 2014",
+                line=None,
+                annotation=None,
+                roi=None,
+                term=None,
+                limit=10,
+                raw=False,
+                out=None,
+            )
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                cli.cmd_export_ndjson(export_args)
+            row = json.loads(stdout.getvalue().strip())
+            self.assertEqual(row["release"], "MB Paper 2014")
+            self.assertEqual(row["publication"]["doi"], "10.7554/eLife.04577")
+
+            stats_args = argparse.Namespace(db=db_path, release=None, json=True)
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                cli.cmd_stats(stats_args)
+            stats = json.loads(stdout.getvalue())
+            self.assertEqual(stats["release_count"], 1)
+            self.assertEqual(stats["line_count"], 1)
+            self.assertEqual(stats["image_count"], 1)
 
 
 if __name__ == "__main__":

@@ -39,8 +39,10 @@ flylight sync --all --force
 flylight sync --release 'Descending Neurons 2018' --workers 8
 flylight search --term DNg14
 flylight show-line SS00724 --release 'Descending Neurons 2018'
+flylight stats
 flylight export-ndjson --entity line --release 'Descending Neurons 2018'
 flylight export-ndjson --entity image --term MB005B --out data/mb005b.ndjson
+flylight export-ndjson --entity release
 ```
 
 ## Notes
@@ -48,5 +50,6 @@ flylight export-ndjson --entity image --term MB005B --out data/mb005b.ndjson
 - `sync --all` is incremental by default; unchanged releases skip.
 - missing release manifest: fallback walks line dirs + metadata jsons.
 - CGI summary enriches line-level fields like expressed-in, genotype, AD, DBD.
+- line/image exports include normalized arrays alongside text fields.
 - local db path: `data/janelia_splitgal4.sqlite`
 - raw manifest cache: `data/raw_manifests/*.json`

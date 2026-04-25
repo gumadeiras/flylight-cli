@@ -5,6 +5,7 @@ import json
 import re
 import sqlite3
 from collections import defaultdict
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -14,6 +15,8 @@ from typing import Any
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
+
+from .normalize import normalize_image_record, normalize_line_record, normalize_release_record
 
 
 BUCKET = "janelia-flylight-imagery"
@@ -648,7 +651,7 @@ def get_image_records(
         row["asset_urls"] = asset_urls_from_image(release, line, payload)
         if include_raw:
             row["raw"] = payload
-        result.append(row)
+        result.append(normalize_image_record(row, payload))
     return result
 
 
@@ -671,6 +674,47 @@ def get_line_record(
     ).fetchone()
     if row is None:
         raise SystemExit(f"no line found: {line} in {release}")
-    record = dict(row)
+    record = normalize_line_record(dict(row))
     record["images"] = get_image_records(conn, release, line, include_raw=include_raw)
     return record
+
+
+def get_release_records(
+    conn: sqlite3.Connection,
+    release: str | None = None,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    clauses = ["1=1"]
+    params: list[Any] = []
+    if release:
+        clauses.append("name = ?")
+        params.append(release)
+    sql = f"""
+        SELECT name, manifest_key, manifest_url, publication_json, line_count, image_count, synced_at,
+               source_kind, source_locator, source_token
+        FROM releases
+        WHERE {' AND '.join(clauses)}
+        ORDER BY name
+    """
+    if limit is not None:
+        sql += " LIMIT ?"
+        params.append(limit)
+    rows = [dict(row) for row in conn.execute(sql, params)]
+    result = []
+    for row in rows:
+        publication = json.loads(row.pop("publication_json"))
+        row["release"] = row.pop("name")
+        result.append(normalize_release_record(row, publication))
+    return result
+
+
+def get_db_stats(conn: sqlite3.Connection, release: str | None = None) -> dict[str, Any]:
+    releases = get_release_records(conn, release=release)
+    source_kinds = Counter(item["source_kind"] for item in releases)
+    return {
+        "release_count": len(releases),
+        "line_count": sum(int(item["line_count"]) for item in releases),
+        "image_count": sum(int(item["image_count"]) for item in releases),
+        "source_kinds": dict(sorted(source_kinds.items())),
+        "releases": releases,
+    }
