@@ -40,6 +40,7 @@ flylight sync --all --offline
 flylight sync --all --refresh-cache
 flylight sync --release 'Descending Neurons 2018' --workers 8
 flylight cache-info
+flylight schema --entity line
 flylight snapshot-export --out data/flylight-snapshot.tar.gz
 flylight snapshot-import data/flylight-snapshot.tar.gz --force
 flylight search --expressed-in DNp04 --ad 31B08 --source-kind line-metadata
@@ -65,6 +66,7 @@ flylight export-ndjson --entity compare-release --left-release 'MB Paper 2014' -
 - cache path: `data/http_cache`
 - `snapshot-export` bundles sqlite + raw manifests + HTTP cache for portable offline reuse.
 - `snapshot-import` restores that bundle on another machine or working copy.
+- `schema` shows agent-facing row shapes and producer commands.
 - `sync --all` is incremental by default; unchanged releases skip.
 - missing release manifest: fallback walks line dirs + metadata jsons.
 - CGI summary enriches line-level fields like expressed-in, genotype, AD, DBD.
