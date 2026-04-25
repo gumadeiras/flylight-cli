@@ -35,6 +35,7 @@ from .records import (
     get_release_record,
     get_release_records,
 )
+from .schema import SCHEMA, schema_for_entity
 from .snapshot import export_snapshot, import_snapshot
 
 
@@ -84,10 +85,10 @@ def cmd_sync(args: argparse.Namespace) -> int:
     incremental = args.incremental or (args.all and not args.force)
     workers = getattr(args, "workers", DEFAULT_WORKERS)
     conn = connect_db(args.db)
-    raw_dir = None if args.no_raw else args.raw_dir
-    synced = []
-    skipped = []
     try:
+        raw_dir = None if args.no_raw else args.raw_dir
+        synced = []
+        skipped = []
         releases = args.release or ([] if not args.all else list_releases())
         if not releases:
             raise SystemExit("choose --all or at least one --release")
@@ -108,15 +109,18 @@ def cmd_sync(args: argparse.Namespace) -> int:
                 )
     except OfflineCacheMiss as exc:
         raise SystemExit(str(exc)) from exc
-    payload = {"synced": synced, "skipped": skipped}
-    if args.json:
-        print(json.dumps(payload, indent=2))
     else:
-        for item in synced:
-            print(f"{item['release']}\tkind={item['source_kind']}\tlines={item['lines']}\timages={item['images']}")
-        for item in skipped:
-            print(f"{item['release']}\tskipped={item['reason']}", file=sys.stderr)
-    return 0
+        payload = {"synced": synced, "skipped": skipped}
+        if args.json:
+            print(json.dumps(payload, indent=2))
+        else:
+            for item in synced:
+                print(f"{item['release']}\tkind={item['source_kind']}\tlines={item['lines']}\timages={item['images']}")
+            for item in skipped:
+                print(f"{item['release']}\tskipped={item['reason']}", file=sys.stderr)
+        return 0
+    finally:
+        conn.close()
 
 
 def cmd_cache_info(args: argparse.Namespace) -> int:
@@ -125,6 +129,20 @@ def cmd_cache_info(args: argparse.Namespace) -> int:
         print(json.dumps(payload, indent=2))
         return 0
     print("\t".join([payload["cache_dir"], f"entries={payload['entries']}", f"bytes={payload['bytes']}"]))
+    return 0
+
+
+def cmd_schema(args: argparse.Namespace) -> int:
+    payload = schema_for_entity(args.entity)
+    if args.json:
+        print(json.dumps(payload, indent=2))
+        return 0
+    for entity, info in payload.items():
+        print(entity)
+        print(f"description\t{info['description']}")
+        print(f"key_fields\t{' | '.join(info['key_fields'])}")
+        print(f"produced_by\t{' | '.join(info['produced_by'])}")
+        print(f"fields\t{' | '.join(info['fields'])}")
     return 0
 
 
@@ -173,184 +191,211 @@ def cmd_snapshot_import(args: argparse.Namespace) -> int:
 
 def cmd_search(args: argparse.Namespace) -> int:
     conn = connect_db(args.db)
-    sql, params = build_line_search_sql(args)
-    rows = [normalize_line_record(dict(row)) for row in conn.execute(sql, params)]
-    if args.json:
-        print(json.dumps(rows, indent=2))
+    try:
+        sql, params = build_line_search_sql(args)
+        rows = [normalize_line_record(dict(row)) for row in conn.execute(sql, params)]
+        if args.json:
+            print(json.dumps(rows, indent=2))
+            return 0
+        for row in rows:
+            fields = [row["line"], row["release"], f"images={row['image_count']}", f"samples={row['sample_count']}"]
+            if row["expressed_in_text"]:
+                fields.append(row["expressed_in_text"])
+            print("\t".join(fields))
         return 0
-    for row in rows:
-        fields = [row["line"], row["release"], f"images={row['image_count']}", f"samples={row['sample_count']}"]
-        if row["expressed_in_text"]:
-            fields.append(row["expressed_in_text"])
-        print("\t".join(fields))
-    return 0
+    finally:
+        conn.close()
 
 
 def cmd_search_images(args: argparse.Namespace) -> int:
     conn = connect_db(args.db)
-    sql, params = build_image_search_sql(args)
-    rows = [dict(row) for row in conn.execute(sql, params)]
-    payload = []
-    for row in rows:
-        raw = json.loads(row.pop("raw_json"))
-        row["asset_urls"] = asset_urls_from_image(row["release"], row["line"], raw)
-        if args.raw:
-            row["raw"] = raw
-        payload.append(normalize_image_record(row, raw))
-    if args.json:
-        print(json.dumps(payload, indent=2))
+    try:
+        sql, params = build_image_search_sql(args)
+        rows = [dict(row) for row in conn.execute(sql, params)]
+        payload = []
+        for row in rows:
+            raw = json.loads(row.pop("raw_json"))
+            row["asset_urls"] = asset_urls_from_image(row["release"], row["line"], raw)
+            if args.raw:
+                row["raw"] = raw
+            payload.append(normalize_image_record(row, raw))
+        if args.json:
+            print(json.dumps(payload, indent=2))
+            return 0
+        for row in payload:
+            fields = [
+                str(row["image_id"]),
+                row["line"],
+                row["release"],
+                row.get("area") or "",
+                row.get("objective") or "",
+                row.get("roi") or "",
+            ]
+            print("\t".join(fields))
         return 0
-    for row in payload:
-        fields = [
-            str(row["image_id"]),
-            row["line"],
-            row["release"],
-            row.get("area") or "",
-            row.get("objective") or "",
-            row.get("roi") or "",
-        ]
-        print("\t".join(fields))
-    return 0
+    finally:
+        conn.close()
 
 
 def cmd_search_text(args: argparse.Namespace) -> int:
     conn = connect_db(args.db)
-    sql, params = build_line_text_search_sql(args)
-    rows = []
-    for row in conn.execute(sql, params):
-        item = normalize_line_record(dict(row))
-        item["rank"] = row["rank"]
-        rows.append(item)
-    if args.json:
-        print(json.dumps(rows, indent=2))
+    try:
+        sql, params = build_line_text_search_sql(args)
+        rows = []
+        for row in conn.execute(sql, params):
+            item = normalize_line_record(dict(row))
+            item["rank"] = row["rank"]
+            rows.append(item)
+        if args.json:
+            print(json.dumps(rows, indent=2))
+            return 0
+        for row in rows:
+            fields = [
+                row["line"],
+                row["release"],
+                f"rank={row['rank']:.3f}",
+                f"images={row['image_count']}",
+                f"samples={row['sample_count']}",
+            ]
+            if row["expressed_in_text"]:
+                fields.append(row["expressed_in_text"])
+            print("\t".join(fields))
         return 0
-    for row in rows:
-        fields = [
-            row["line"],
-            row["release"],
-            f"rank={row['rank']:.3f}",
-            f"images={row['image_count']}",
-            f"samples={row['sample_count']}",
-        ]
-        if row["expressed_in_text"]:
-            fields.append(row["expressed_in_text"])
-        print("\t".join(fields))
-    return 0
+    finally:
+        conn.close()
 
 
 def cmd_show_line(args: argparse.Namespace) -> int:
     conn = connect_db(args.db)
-    matches = get_line_matches(conn, args.line, releases=[args.release] if args.release else None)
-    if not matches:
-        raise SystemExit(f"no line found: {args.line}")
-    result = {
-        "line": args.line,
-        "releases": [get_line_record(conn, item["release"], item["line"], include_raw=args.raw) for item in matches],
-    }
-    print(json.dumps(result, indent=2))
-    return 0
+    try:
+        matches = get_line_matches(conn, args.line, releases=[args.release] if args.release else None)
+        if not matches:
+            raise SystemExit(f"no line found: {args.line}")
+        result = {
+            "line": args.line,
+            "releases": [get_line_record(conn, item["release"], item["line"], include_raw=args.raw) for item in matches],
+        }
+        print(json.dumps(result, indent=2))
+        return 0
+    finally:
+        conn.close()
 
 
 def cmd_show_release(args: argparse.Namespace) -> int:
     conn = connect_db(args.db)
-    result = get_release_record(conn, args.release)
-    if args.include_lines:
-        sql, params = build_line_search_sql(args)
-        rows = [dict(row) for row in conn.execute(sql, params)]
-        result["lines"] = [get_line_record(conn, row["release"], row["line"], include_raw=args.raw) for row in rows]
-    print(json.dumps(result, indent=2))
-    return 0
+    try:
+        result = get_release_record(conn, args.release)
+        if args.include_lines:
+            sql, params = build_line_search_sql(args)
+            rows = [dict(row) for row in conn.execute(sql, params)]
+            result["lines"] = [get_line_record(conn, row["release"], row["line"], include_raw=args.raw) for row in rows]
+        print(json.dumps(result, indent=2))
+        return 0
+    finally:
+        conn.close()
 
 
 def cmd_show_image(args: argparse.Namespace) -> int:
     conn = connect_db(args.db)
-    print(json.dumps(get_image_record(conn, args.image_id, include_raw=args.raw), indent=2))
-    return 0
+    try:
+        print(json.dumps(get_image_record(conn, args.image_id, include_raw=args.raw), indent=2))
+        return 0
+    finally:
+        conn.close()
 
 
 def cmd_compare_line(args: argparse.Namespace) -> int:
     conn = connect_db(args.db)
-    result = compare_line_records(conn, args.line, releases=args.release)
-    if args.json:
-        print(json.dumps(result, indent=2))
-        return 0
-    print(f"line={result['line']}\treleases={result['release_count']}")
-    for field, values in result["shared"].items():
-        if values:
-            print(f"shared_{field}\t{' | '.join(values)}")
-    for row in result["releases"]:
-        print(
-            "\t".join(
-                [
-                    row["release"],
-                    row["source_kind"],
-                    f"images={row['image_count']}",
-                    f"samples={row['sample_count']}",
-                ]
+    try:
+        result = compare_line_records(conn, args.line, releases=args.release)
+        if args.json:
+            print(json.dumps(result, indent=2))
+            return 0
+        print(f"line={result['line']}\treleases={result['release_count']}")
+        for field, values in result["shared"].items():
+            if values:
+                print(f"shared_{field}\t{' | '.join(values)}")
+        for row in result["releases"]:
+            print(
+                "\t".join(
+                    [
+                        row["release"],
+                        row["source_kind"],
+                        f"images={row['image_count']}",
+                        f"samples={row['sample_count']}",
+                    ]
+                )
             )
-        )
-    return 0
+        return 0
+    finally:
+        conn.close()
 
 
 def cmd_compare_release(args: argparse.Namespace) -> int:
     conn = connect_db(args.db)
-    result = compare_release_records(
-        conn,
-        left_release=args.left_release,
-        right_release=args.right_release,
-        include_lines=args.include_lines,
-    )
-    if args.json:
-        print(json.dumps(result, indent=2))
-        return 0
-    summary = result["summary"]
-    print(
-        "\t".join(
-            [
-                result["left_release"]["release"],
-                result["right_release"]["release"],
-                f"added={summary['added_count']}",
-                f"removed={summary['removed_count']}",
-                f"changed={summary['changed_count']}",
-                f"unchanged={summary['unchanged_count']}",
-            ]
+    try:
+        result = compare_release_records(
+            conn,
+            left_release=args.left_release,
+            right_release=args.right_release,
+            include_lines=args.include_lines,
         )
-    )
-    for label in ["added_lines", "removed_lines", "changed_lines"]:
-        if result[label]:
-            print(f"{label}\t{' | '.join(result[label])}")
-    return 0
+        if args.json:
+            print(json.dumps(result, indent=2))
+            return 0
+        summary = result["summary"]
+        print(
+            "\t".join(
+                [
+                    result["left_release"]["release"],
+                    result["right_release"]["release"],
+                    f"added={summary['added_count']}",
+                    f"removed={summary['removed_count']}",
+                    f"changed={summary['changed_count']}",
+                    f"unchanged={summary['unchanged_count']}",
+                ]
+            )
+        )
+        for label in ["added_lines", "removed_lines", "changed_lines"]:
+            if result[label]:
+                print(f"{label}\t{' | '.join(result[label])}")
+        return 0
+    finally:
+        conn.close()
 
 
 def cmd_stats(args: argparse.Namespace) -> int:
     conn = connect_db(args.db)
-    payload = get_db_stats(conn, release=args.release)
-    if args.json:
-        print(json.dumps(payload, indent=2))
-        return 0
-    print(
-        "\t".join(
-            [
-                f"releases={payload['release_count']}",
-                f"lines={payload['line_count']}",
-                f"images={payload['image_count']}",
-            ]
-        )
-    )
-    for kind, count in payload["source_kinds"].items():
-        print(f"source_kind\t{kind}\t{count}")
-    for row in payload["releases"]:
+    try:
+        payload = get_db_stats(conn, release=args.release)
+        if args.json:
+            print(json.dumps(payload, indent=2))
+            return 0
         print(
             "\t".join(
                 [
-                    row["release"],
-                    row["source_kind"],
-                    f"lines={row['line_count']}",
-                    f"images={row['image_count']}",
+                    f"releases={payload['release_count']}",
+                    f"lines={payload['line_count']}",
+                    f"images={payload['image_count']}",
                 ]
             )
         )
-    return 0
+        for kind, count in payload["source_kinds"].items():
+            print(f"source_kind\t{kind}\t{count}")
+        for row in payload["releases"]:
+            print(
+                "\t".join(
+                    [
+                        row["release"],
+                        row["source_kind"],
+                        f"lines={row['line_count']}",
+                        f"images={row['image_count']}",
+                    ]
+                )
+            )
+        return 0
+    finally:
+        conn.close()
 
 
 def write_ndjson(rows: list[dict[str, Any]], out: TextIO) -> None:
@@ -410,6 +455,7 @@ def cmd_export_ndjson(args: argparse.Namespace) -> int:
     finally:
         if args.out:
             out_handle.close()
+        conn.close()
     return 0
 
 
@@ -442,6 +488,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_cache_info)
+
+    p = sub.add_parser("schema", help="show record schemas for agent-facing entities")
+    p.add_argument("--entity", choices=sorted(SCHEMA.keys()))
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_schema)
 
     p = sub.add_parser("snapshot-export", help="bundle db, raw manifests, and HTTP cache for offline reuse")
     p.add_argument("--db", type=Path, default=DEFAULT_DB)

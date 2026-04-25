@@ -57,6 +57,21 @@ class FlylightCliTests(unittest.TestCase):
         self.assertIn("31B08-p65ADZp", rows["SS00724"]["ad_text"])
         self.assertIn("24A03-ZpGdbd", rows["SS00724"]["dbd_text"])
 
+    def test_schema_command(self) -> None:
+        all_args = argparse.Namespace(entity=None, json=True)
+        with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            cli.cmd_schema(all_args)
+        payload = json.loads(stdout.getvalue())
+        self.assertIn("line", payload)
+        self.assertIn("compare-release", payload)
+
+        single_args = argparse.Namespace(entity="compare-line", json=True)
+        with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            cli.cmd_schema(single_args)
+        entity_payload = json.loads(stdout.getvalue())
+        self.assertEqual(list(entity_payload.keys()), ["compare-line"])
+        self.assertIn("shared", entity_payload["compare-line"]["fields"])
+
     def test_list_releases_uses_cache_offline(self) -> None:
         root_xml = b"""<?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
