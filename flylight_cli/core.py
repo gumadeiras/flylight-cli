@@ -655,6 +655,27 @@ def get_image_records(
     return result
 
 
+def get_image_record(conn: sqlite3.Connection, image_id: int, include_raw: bool = False) -> dict[str, Any]:
+    row = conn.execute(
+        """
+        SELECT i.image_id, i.release, i.line, i.robot_id, i.slide_code, i.objective, i.area, i.tile, i.gender, i.roi,
+               i.annotations_text, i.metadata_key, i.metadata_url, i.raw_json, r.source_kind
+        FROM images i
+        JOIN releases r ON r.name = i.release
+        WHERE i.image_id = ?
+        """,
+        (image_id,),
+    ).fetchone()
+    if row is None:
+        raise SystemExit(f"no image found: {image_id}")
+    record = dict(row)
+    payload = json.loads(record.pop("raw_json"))
+    record["asset_urls"] = asset_urls_from_image(record["release"], record["line"], payload)
+    if include_raw:
+        record["raw"] = payload
+    return normalize_image_record(record, payload)
+
+
 def get_line_record(
     conn: sqlite3.Connection,
     release: str,
@@ -706,6 +727,13 @@ def get_release_records(
         row["release"] = row.pop("name")
         result.append(normalize_release_record(row, publication))
     return result
+
+
+def get_release_record(conn: sqlite3.Connection, release: str) -> dict[str, Any]:
+    rows = get_release_records(conn, release=release, limit=1)
+    if not rows:
+        raise SystemExit(f"no release found: {release}")
+    return rows[0]
 
 
 def get_db_stats(conn: sqlite3.Connection, release: str | None = None) -> dict[str, Any]:

@@ -91,6 +91,14 @@ class FlylightCliTests(unittest.TestCase):
             self.assertEqual(row["roi_terms"], ["alpha'/beta'ap", "alpha'/beta'm"])
             self.assertTrue(any(url.endswith("unaligned_stack.h5j") for url in row["asset_urls"]))
 
+            show_image_args = argparse.Namespace(db=db_path, image_id=6878306, raw=False)
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                cli.cmd_show_image(show_image_args)
+            image_row = json.loads(stdout.getvalue())
+            self.assertEqual(image_row["image_id"], 6878306)
+            self.assertEqual(image_row["source_kind"], "manifest")
+            self.assertEqual(image_row["line"], "MB005B")
+
     def test_sync_line_metadata_release_with_html_enrichment(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "fallback.sqlite"
@@ -137,6 +145,55 @@ class FlylightCliTests(unittest.TestCase):
             self.assertEqual(record["expressed_in_text"], "DNp04")
             self.assertIn("31B08-p65ADZp", record["ad_text"])
             self.assertIn("24A03-ZpGdbd", record["dbd_text"])
+
+            search_args = argparse.Namespace(
+                db=db_path,
+                release="Descending Neurons 2018",
+                line=None,
+                annotation=None,
+                roi=None,
+                robot_id="3007645",
+                expressed_in="DNp04",
+                genotype=None,
+                ad="31B08",
+                dbd=None,
+                source_kind="line-metadata",
+                min_images=2,
+                min_samples=1,
+                term=None,
+                limit=10,
+                json=True,
+            )
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                cli.cmd_search(search_args)
+            search_rows = json.loads(stdout.getvalue())
+            self.assertEqual(len(search_rows), 1)
+            self.assertEqual(search_rows[0]["line"], "SS00724")
+            self.assertEqual(search_rows[0]["robot_ids"], ["3007645"])
+
+            image_args = argparse.Namespace(
+                db=db_path,
+                release="Descending Neurons 2018",
+                line="SS00724",
+                annotation=None,
+                roi=None,
+                robot_id="3007645",
+                area="Brain",
+                objective="20x",
+                gender="f",
+                source_kind="line-metadata",
+                term=None,
+                limit=10,
+                raw=False,
+                json=True,
+            )
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                cli.cmd_search_images(image_args)
+            image_rows = json.loads(stdout.getvalue())
+            self.assertEqual(len(image_rows), 1)
+            self.assertEqual(image_rows[0]["line"], "SS00724")
+            self.assertEqual(image_rows[0]["area"], "Brain")
+            self.assertEqual(image_rows[0]["source_kind"], "line-metadata")
 
     def test_cmd_sync_incremental_skips_up_to_date_release(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -217,6 +274,32 @@ class FlylightCliTests(unittest.TestCase):
             self.assertEqual(stats["release_count"], 1)
             self.assertEqual(stats["line_count"], 1)
             self.assertEqual(stats["image_count"], 1)
+
+            release_args = argparse.Namespace(
+                db=db_path,
+                release="MB Paper 2014",
+                include_lines=True,
+                line="MB005B",
+                annotation=None,
+                roi=None,
+                robot_id=None,
+                expressed_in=None,
+                genotype="34A03",
+                ad=None,
+                dbd=None,
+                source_kind="manifest",
+                min_images=1,
+                min_samples=1,
+                term=None,
+                limit=10,
+                raw=False,
+            )
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                cli.cmd_show_release(release_args)
+            release_payload = json.loads(stdout.getvalue())
+            self.assertEqual(release_payload["release"], "MB Paper 2014")
+            self.assertEqual(len(release_payload["lines"]), 1)
+            self.assertEqual(release_payload["lines"][0]["line"], "MB005B")
 
 
 if __name__ == "__main__":

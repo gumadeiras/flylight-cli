@@ -10,12 +10,13 @@ from .core import (
     DEFAULT_DB,
     DEFAULT_RAW_DIR,
     DEFAULT_WORKERS,
-    ReleasePlan,
     asset_urls_from_image,
     connect_db,
     ensure_parent,
     get_db_stats,
+    get_image_record,
     get_line_record,
+    get_release_record,
     get_release_records,
     json_dumps,
     list_releases,
@@ -25,6 +26,8 @@ from .core import (
     sync_release_from_plan,
 )
 from .normalize import normalize_image_record
+from .normalize import normalize_line_record
+from .query import build_image_search_sql, build_line_search_sql
 
 
 def cmd_releases(args: argparse.Namespace) -> int:
@@ -83,43 +86,10 @@ def cmd_sync(args: argparse.Namespace) -> int:
     return 0
 
 
-def build_search_sql(args: argparse.Namespace) -> tuple[str, list[Any]]:
-    clauses = ["1=1"]
-    params: list[Any] = []
-    if args.release:
-        clauses.append("release = ?")
-        params.append(args.release)
-    if args.line:
-        clauses.append("line LIKE ?")
-        params.append(f"%{args.line}%")
-    if args.annotation:
-        clauses.append("annotations_text LIKE ?")
-        params.append(f"%{args.annotation}%")
-    if args.roi:
-        clauses.append("rois_text LIKE ?")
-        params.append(f"%{args.roi}%")
-    if args.term:
-        clauses.append(
-            "(line LIKE ? OR annotations_text LIKE ? OR rois_text LIKE ? OR expressed_in_text LIKE ? OR genotype_text LIKE ? OR ad_text LIKE ? OR dbd_text LIKE ?)"
-        )
-        like = f"%{args.term}%"
-        params.extend([like, like, like, like, like, like, like])
-    sql = f"""
-      SELECT release, line, image_count, sample_count, annotations_text, rois_text, robot_ids_text,
-             expressed_in_text, genotype_text, ad_text, dbd_text
-      FROM line_releases
-      WHERE {' AND '.join(clauses)}
-      ORDER BY line, release
-      LIMIT ?
-    """
-    params.append(args.limit)
-    return sql, params
-
-
 def cmd_search(args: argparse.Namespace) -> int:
     conn = connect_db(args.db)
-    sql, params = build_search_sql(args)
-    rows = [dict(row) for row in conn.execute(sql, params)]
+    sql, params = build_line_search_sql(args)
+    rows = [normalize_line_record(dict(row)) for row in conn.execute(sql, params)]
     if args.json:
         print(json.dumps(rows, indent=2))
         return 0
@@ -127,6 +97,33 @@ def cmd_search(args: argparse.Namespace) -> int:
         fields = [row["line"], row["release"], f"images={row['image_count']}", f"samples={row['sample_count']}"]
         if row["expressed_in_text"]:
             fields.append(row["expressed_in_text"])
+        print("\t".join(fields))
+    return 0
+
+
+def cmd_search_images(args: argparse.Namespace) -> int:
+    conn = connect_db(args.db)
+    sql, params = build_image_search_sql(args)
+    rows = [dict(row) for row in conn.execute(sql, params)]
+    payload = []
+    for row in rows:
+        raw = json.loads(row.pop("raw_json"))
+        row["asset_urls"] = asset_urls_from_image(row["release"], row["line"], raw)
+        if args.raw:
+            row["raw"] = raw
+        payload.append(normalize_image_record(row, raw))
+    if args.json:
+        print(json.dumps(payload, indent=2))
+        return 0
+    for row in payload:
+        fields = [
+            str(row["image_id"]),
+            row["line"],
+            row["release"],
+            row.get("area") or "",
+            row.get("objective") or "",
+            row.get("roi") or "",
+        ]
         print("\t".join(fields))
     return 0
 
@@ -157,6 +154,23 @@ def cmd_show_line(args: argparse.Namespace) -> int:
         "releases": [get_line_record(conn, item["release"], item["line"], include_raw=args.raw) for item in matches],
     }
     print(json.dumps(result, indent=2))
+    return 0
+
+
+def cmd_show_release(args: argparse.Namespace) -> int:
+    conn = connect_db(args.db)
+    result = get_release_record(conn, args.release)
+    if args.include_lines:
+        sql, params = build_line_search_sql(args)
+        rows = [dict(row) for row in conn.execute(sql, params)]
+        result["lines"] = [get_line_record(conn, row["release"], row["line"], include_raw=args.raw) for row in rows]
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def cmd_show_image(args: argparse.Namespace) -> int:
+    conn = connect_db(args.db)
+    print(json.dumps(get_image_record(conn, args.image_id, include_raw=args.raw), indent=2))
     return 0
 
 
@@ -207,38 +221,13 @@ def cmd_export_ndjson(args: argparse.Namespace) -> int:
 
     try:
         if args.entity == "line":
-            sql, params = build_search_sql(args)
+            sql, params = build_line_search_sql(args)
             rows = [dict(row) for row in conn.execute(sql, params)]
             payload = [get_line_record(conn, row["release"], row["line"], include_raw=args.raw) for row in rows]
             write_ndjson(payload, out_handle)
         elif args.entity == "image":
-            clauses = ["1=1"]
-            params: list[Any] = []
-            if args.release:
-                clauses.append("release = ?")
-                params.append(args.release)
-            if args.line:
-                clauses.append("line LIKE ?")
-                params.append(f"%{args.line}%")
-            if args.term:
-                clauses.append("(line LIKE ? OR roi LIKE ? OR annotations_text LIKE ?)")
-                like = f"%{args.term}%"
-                params.extend([like, like, like])
-            params.append(args.limit)
-            rows = [
-                dict(row)
-                for row in conn.execute(
-                    f"""
-                    SELECT image_id, release, line, robot_id, slide_code, objective, area, tile, gender, roi,
-                           annotations_text, metadata_key, metadata_url, raw_json
-                    FROM images
-                    WHERE {' AND '.join(clauses)}
-                    ORDER BY release, line, slide_code, image_id
-                    LIMIT ?
-                    """,
-                    params,
-                )
-            ]
+            sql, params = build_image_search_sql(args)
+            rows = [dict(row) for row in conn.execute(sql, params)]
             payload = []
             for row in rows:
                 raw = json.loads(row.pop("raw_json"))
@@ -285,10 +274,35 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--line")
     p.add_argument("--annotation")
     p.add_argument("--roi")
+    p.add_argument("--robot-id")
+    p.add_argument("--expressed-in")
+    p.add_argument("--genotype")
+    p.add_argument("--ad")
+    p.add_argument("--dbd")
+    p.add_argument("--source-kind", choices=["manifest", "line-metadata", "cgi-html", "empty"])
+    p.add_argument("--min-images", type=int)
+    p.add_argument("--min-samples", type=int)
     p.add_argument("--term")
     p.add_argument("--limit", type=int, default=25)
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_search)
+
+    p = sub.add_parser("search-images", help="search synced image records")
+    p.add_argument("--db", type=Path, default=DEFAULT_DB)
+    p.add_argument("--release")
+    p.add_argument("--line")
+    p.add_argument("--annotation")
+    p.add_argument("--roi")
+    p.add_argument("--robot-id")
+    p.add_argument("--area")
+    p.add_argument("--objective")
+    p.add_argument("--gender")
+    p.add_argument("--source-kind", choices=["manifest", "line-metadata", "cgi-html", "empty"])
+    p.add_argument("--term")
+    p.add_argument("--limit", type=int, default=25)
+    p.add_argument("--raw", action="store_true", help="include raw image payloads")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_search_images)
 
     p = sub.add_parser("show-line", help="show one line with images + asset urls")
     p.add_argument("line")
@@ -296,6 +310,32 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--release")
     p.add_argument("--raw", action="store_true", help="include raw image payloads")
     p.set_defaults(func=cmd_show_line)
+
+    p = sub.add_parser("show-image", help="show one image record with asset urls")
+    p.add_argument("image_id", type=int)
+    p.add_argument("--db", type=Path, default=DEFAULT_DB)
+    p.add_argument("--raw", action="store_true", help="include raw image payload")
+    p.set_defaults(func=cmd_show_image)
+
+    p = sub.add_parser("show-release", help="show one release with optional embedded lines")
+    p.add_argument("release")
+    p.add_argument("--db", type=Path, default=DEFAULT_DB)
+    p.add_argument("--include-lines", action="store_true")
+    p.add_argument("--line", help="substring filter when embedding lines")
+    p.add_argument("--annotation")
+    p.add_argument("--roi")
+    p.add_argument("--robot-id")
+    p.add_argument("--expressed-in")
+    p.add_argument("--genotype")
+    p.add_argument("--ad")
+    p.add_argument("--dbd")
+    p.add_argument("--source-kind", choices=["manifest", "line-metadata", "cgi-html", "empty"])
+    p.add_argument("--min-images", type=int)
+    p.add_argument("--min-samples", type=int)
+    p.add_argument("--term")
+    p.add_argument("--limit", type=int, default=100)
+    p.add_argument("--raw", action="store_true", help="include raw image payloads in embedded lines")
+    p.set_defaults(func=cmd_show_release)
 
     p = sub.add_parser("stats", help="show counts for synced releases")
     p.add_argument("--db", type=Path, default=DEFAULT_DB)
@@ -310,6 +350,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--line")
     p.add_argument("--annotation")
     p.add_argument("--roi")
+    p.add_argument("--robot-id")
+    p.add_argument("--expressed-in")
+    p.add_argument("--genotype")
+    p.add_argument("--ad")
+    p.add_argument("--dbd")
+    p.add_argument("--area")
+    p.add_argument("--objective")
+    p.add_argument("--gender")
+    p.add_argument("--source-kind", choices=["manifest", "line-metadata", "cgi-html", "empty"])
+    p.add_argument("--min-images", type=int)
+    p.add_argument("--min-samples", type=int)
     p.add_argument("--term")
     p.add_argument("--limit", type=int, default=100)
     p.add_argument("--raw", action="store_true", help="include raw image payloads")
