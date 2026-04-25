@@ -36,7 +36,10 @@ flylight releases
 flylight sync --release 'MB Paper 2014'
 flylight sync --all
 flylight sync --all --force
+flylight sync --all --offline
+flylight sync --all --refresh-cache
 flylight sync --release 'Descending Neurons 2018' --workers 8
+flylight cache-info
 flylight search --expressed-in DNp04 --ad 31B08 --source-kind line-metadata
 flylight search-text 'DNp04 AND 31B08'
 flylight search-images --area Brain --objective 20x --robot-id 3007645
@@ -53,6 +56,9 @@ flylight export-ndjson --entity release
 
 ## Notes
 
+- HTTP fetches are cache-first by default; cached responses are reused until you pass `--refresh-cache`.
+- `--offline` disables network access and uses cached HTTP responses only.
+- cache path: `data/http_cache`
 - `sync --all` is incremental by default; unchanged releases skip.
 - missing release manifest: fallback walks line dirs + metadata jsons.
 - CGI summary enriches line-level fields like expressed-in, genotype, AD, DBD.

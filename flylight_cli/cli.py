@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any, TextIO
 
+from .cache import DEFAULT_CACHE_DIR, OfflineCacheMiss, cache_stats, set_cache_options
 from .core import (
     DEFAULT_DB,
     DEFAULT_RAW_DIR,
@@ -34,18 +35,39 @@ from .records import (
 )
 
 
-def cmd_releases(args: argparse.Namespace) -> int:
-    rows = []
-    for release in list_releases():
-        plan = plan_release(release, include_html_fallback=False)
-        rows.append(
-            {
-                "release": release,
-                "source_kind": plan.source_kind,
-                "manifest_key": plan.manifest_object["key"] if plan.manifest_object else None,
-                "manifest_url": s3_url_for_key(plan.manifest_object["key"]) if plan.manifest_object else None,
-            }
+def apply_cache_args(args: argparse.Namespace) -> None:
+    try:
+        set_cache_options(
+            cache_dir=getattr(args, "cache_dir", DEFAULT_CACHE_DIR),
+            offline=getattr(args, "offline", False),
+            refresh=getattr(args, "refresh_cache", False),
         )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+
+def add_cache_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
+    parser.add_argument("--offline", action="store_true", help="use cached HTTP responses only")
+    parser.add_argument("--refresh-cache", action="store_true", help="bypass cached HTTP responses and refresh them")
+
+
+def cmd_releases(args: argparse.Namespace) -> int:
+    apply_cache_args(args)
+    rows = []
+    try:
+        for release in list_releases():
+            plan = plan_release(release, include_html_fallback=False)
+            rows.append(
+                {
+                    "release": release,
+                    "source_kind": plan.source_kind,
+                    "manifest_key": plan.manifest_object["key"] if plan.manifest_object else None,
+                    "manifest_url": s3_url_for_key(plan.manifest_object["key"]) if plan.manifest_object else None,
+                }
+            )
+    except OfflineCacheMiss as exc:
+        raise SystemExit(str(exc)) from exc
     if args.json:
         print(json.dumps(rows, indent=2))
     else:
@@ -55,30 +77,34 @@ def cmd_releases(args: argparse.Namespace) -> int:
 
 
 def cmd_sync(args: argparse.Namespace) -> int:
-    releases = args.release or ([] if not args.all else list_releases())
-    if not releases:
-        raise SystemExit("choose --all or at least one --release")
+    apply_cache_args(args)
     incremental = args.incremental or (args.all and not args.force)
     workers = getattr(args, "workers", DEFAULT_WORKERS)
     conn = connect_db(args.db)
     raw_dir = None if args.no_raw else args.raw_dir
     synced = []
     skipped = []
-    for release in releases:
-        plan = plan_release(release, include_html_fallback=True, workers=workers)
-        if plan.source_kind == "empty":
-            skipped.append({"release": release, "reason": "no_source"})
-            continue
-        if incremental and should_skip_incremental(conn, release, plan.source_token):
-            skipped.append({"release": release, "reason": "up_to_date"})
-            continue
-        result = sync_release_from_plan(conn, plan, raw_dir, workers=workers)
-        synced.append(result)
-        if args.verbose:
-            print(
-                f"synced {release}: kind={result['source_kind']} lines={result['lines']} images={result['images']}",
-                file=sys.stderr,
-            )
+    try:
+        releases = args.release or ([] if not args.all else list_releases())
+        if not releases:
+            raise SystemExit("choose --all or at least one --release")
+        for release in releases:
+            plan = plan_release(release, include_html_fallback=True, workers=workers)
+            if plan.source_kind == "empty":
+                skipped.append({"release": release, "reason": "no_source"})
+                continue
+            if incremental and should_skip_incremental(conn, release, plan.source_token):
+                skipped.append({"release": release, "reason": "up_to_date"})
+                continue
+            result = sync_release_from_plan(conn, plan, raw_dir, workers=workers)
+            synced.append(result)
+            if args.verbose:
+                print(
+                    f"synced {release}: kind={result['source_kind']} lines={result['lines']} images={result['images']}",
+                    file=sys.stderr,
+                )
+    except OfflineCacheMiss as exc:
+        raise SystemExit(str(exc)) from exc
     payload = {"synced": synced, "skipped": skipped}
     if args.json:
         print(json.dumps(payload, indent=2))
@@ -87,6 +113,15 @@ def cmd_sync(args: argparse.Namespace) -> int:
             print(f"{item['release']}\tkind={item['source_kind']}\tlines={item['lines']}\timages={item['images']}")
         for item in skipped:
             print(f"{item['release']}\tskipped={item['reason']}", file=sys.stderr)
+    return 0
+
+
+def cmd_cache_info(args: argparse.Namespace) -> int:
+    payload = cache_stats(args.cache_dir)
+    if args.json:
+        print(json.dumps(payload, indent=2))
+        return 0
+    print("\t".join([payload["cache_dir"], f"entries={payload['entries']}", f"bytes={payload['bytes']}"]))
     return 0
 
 
@@ -319,10 +354,12 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("releases", help="list releases and source types")
+    add_cache_args(p)
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_releases)
 
     p = sub.add_parser("sync", help="sync one or more releases into sqlite")
+    add_cache_args(p)
     p.add_argument("--db", type=Path, default=DEFAULT_DB)
     p.add_argument("--raw-dir", type=Path, default=DEFAULT_RAW_DIR)
     p.add_argument("--no-raw", action="store_true", help="skip writing raw manifest files")
@@ -334,6 +371,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true")
     p.add_argument("--verbose", action="store_true")
     p.set_defaults(func=cmd_sync)
+
+    p = sub.add_parser("cache-info", help="show HTTP cache location and size")
+    p.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_cache_info)
 
     p = sub.add_parser("search", help="search synced line records")
     p.add_argument("--db", type=Path, default=DEFAULT_DB)

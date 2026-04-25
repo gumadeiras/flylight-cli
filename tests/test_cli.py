@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from flylight_cli import cache
 from flylight_cli import cli
 from flylight_cli import core
 
@@ -22,6 +23,12 @@ def load_json_fixture(name: str):
 
 def load_text_fixture(name: str) -> str:
     return (FIXTURES / name).read_text(encoding="utf-8")
+
+
+def mock_http_response(payload: bytes) -> mock.MagicMock:
+    response = mock.MagicMock()
+    response.__enter__.return_value.read.return_value = payload
+    return response
 
 
 class FlylightCliTests(unittest.TestCase):
@@ -49,6 +56,35 @@ class FlylightCliTests(unittest.TestCase):
         self.assertEqual(rows["SS00724"]["expressed_in_text"], "DNp04")
         self.assertIn("31B08-p65ADZp", rows["SS00724"]["ad_text"])
         self.assertIn("24A03-ZpGdbd", rows["SS00724"]["dbd_text"])
+
+    def test_list_releases_uses_cache_offline(self) -> None:
+        root_xml = b"""<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Name>janelia-flylight-imagery</Name>
+  <Prefix></Prefix>
+  <Marker></Marker>
+  <MaxKeys>1000</MaxKeys>
+  <Delimiter>/</Delimiter>
+  <IsTruncated>false</IsTruncated>
+  <CommonPrefixes><Prefix>MB Paper 2014/</Prefix></CommonPrefixes>
+  <CommonPrefixes><Prefix>Descending Neurons 2018/</Prefix></CommonPrefixes>
+  <CommonPrefixes><Prefix>content/</Prefix></CommonPrefixes>
+</ListBucketResult>
+"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir) / "http-cache"
+            cache.set_cache_options(cache_dir=cache_dir, offline=False, refresh=False)
+            try:
+                with mock.patch("flylight_cli.cache.urlopen", return_value=mock_http_response(root_xml)):
+                    releases = core.list_releases()
+                self.assertEqual(releases, ["Descending Neurons 2018", "MB Paper 2014"])
+
+                cache.set_cache_options(cache_dir=cache_dir, offline=True, refresh=False)
+                with mock.patch("flylight_cli.cache.urlopen", side_effect=AssertionError("network should not be used")):
+                    offline_releases = core.list_releases()
+                self.assertEqual(offline_releases, releases)
+            finally:
+                cache.set_cache_options(cache_dir=cache.DEFAULT_CACHE_DIR, offline=False, refresh=False)
 
     def test_sync_manifest_release_and_export_image_ndjson(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -99,6 +135,36 @@ class FlylightCliTests(unittest.TestCase):
             self.assertEqual(image_row["image_id"], 6878306)
             self.assertEqual(image_row["source_kind"], "manifest")
             self.assertEqual(image_row["line"], "MB005B")
+
+    def test_sync_manifest_release_works_offline_from_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir) / "http-cache"
+            db_path = Path(tmpdir) / "offline.sqlite"
+            manifest_url = core.s3_url_for_key("MB Paper 2014/MB_Paper_2014.metadata.json")
+            manifest_bytes = json.dumps(load_json_fixture("release_manifest.json")).encode("utf-8")
+            plan = core.ReleasePlan(
+                release="MB Paper 2014",
+                source_kind="manifest",
+                source_locator="MB Paper 2014/MB_Paper_2014.metadata.json",
+                source_token="manifest-token",
+                manifest_object={
+                    "key": "MB Paper 2014/MB_Paper_2014.metadata.json",
+                    "last_modified": "2022-01-18T15:57:49.000Z",
+                },
+            )
+            try:
+                cache.set_cache_options(cache_dir=cache_dir, offline=False, refresh=False)
+                with mock.patch("flylight_cli.cache.urlopen", return_value=mock_http_response(manifest_bytes)):
+                    core.fetch_json(manifest_url)
+
+                cache.set_cache_options(cache_dir=cache_dir, offline=True, refresh=False)
+                conn = core.connect_db(db_path)
+                with mock.patch("flylight_cli.cache.urlopen", side_effect=AssertionError("network should not be used")):
+                    result = core.sync_release_from_plan(conn, plan, raw_dir=None)
+                self.assertEqual(result["lines"], 1)
+                self.assertEqual(result["images"], 1)
+            finally:
+                cache.set_cache_options(cache_dir=cache.DEFAULT_CACHE_DIR, offline=False, refresh=False)
 
     def test_sync_line_metadata_release_with_html_enrichment(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

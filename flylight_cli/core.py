@@ -12,9 +12,9 @@ from html import unescape
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
-from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
+from .cache import DEFAULT_CACHE_DIR, OfflineCacheMiss, fetch_bytes as cached_fetch_bytes
 from .db import connect_db, ensure_parent, refresh_release_fts
 from .normalize import normalize_image_record, normalize_line_record, normalize_release_record
 from .records import asset_urls_from_image, get_db_stats, get_image_record, get_image_records, get_line_record, get_release_record, get_release_records
@@ -25,7 +25,7 @@ S3_HTTP_ROOT = f"https://s3.amazonaws.com/{BUCKET}"
 S3_LIST_ROOT = f"{S3_HTTP_ROOT}/"
 SPLITGAL4_SUMMARY_URL = "https://splitgal4.janelia.org/cgi-bin/splitgal4_summary.cgi"
 NS = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
-USER_AGENT = "flylight-cli/0.5"
+USER_AGENT = "flylight-cli/0.6"
 DEFAULT_DB = Path("data/janelia_splitgal4.sqlite")
 DEFAULT_RAW_DIR = Path("data/raw_manifests")
 DEFAULT_WORKERS = 12
@@ -36,9 +36,7 @@ def now_iso() -> str:
 
 
 def fetch_bytes(url: str) -> bytes:
-    req = Request(url, headers={"User-Agent": USER_AGENT})
-    with urlopen(req) as resp:
-        return resp.read()
+    return cached_fetch_bytes(url, USER_AGENT)
 
 
 def fetch_text(url: str) -> str:
