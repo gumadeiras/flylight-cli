@@ -37,8 +37,11 @@ flylight sync --release 'MB Paper 2014'
 flylight sync --all
 flylight sync --all --force
 flylight sync --release 'Descending Neurons 2018' --workers 8
-flylight search --term DNg14
+flylight search --expressed-in DNp04 --ad 31B08 --source-kind line-metadata
+flylight search-images --area Brain --objective 20x --robot-id 3007645
 flylight show-line SS00724 --release 'Descending Neurons 2018'
+flylight show-image 6878306
+flylight show-release 'MB Paper 2014' --include-lines --genotype 34A03
 flylight stats
 flylight export-ndjson --entity line --release 'Descending Neurons 2018'
 flylight export-ndjson --entity image --term MB005B --out data/mb005b.ndjson
@@ -51,5 +54,7 @@ flylight export-ndjson --entity release
 - missing release manifest: fallback walks line dirs + metadata jsons.
 - CGI summary enriches line-level fields like expressed-in, genotype, AD, DBD.
 - line/image exports include normalized arrays alongside text fields.
+- `search` supports field filters over line metadata: AD, DBD, genotype, expressed-in, robot-id, source-kind.
+- `search-images` supports field filters over image metadata: area, objective, gender, robot-id, roi.
 - local db path: `data/janelia_splitgal4.sqlite`
 - raw manifest cache: `data/raw_manifests/*.json`
