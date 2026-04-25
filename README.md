@@ -54,6 +54,8 @@ flylight stats
 flylight export-ndjson --entity line --release 'Descending Neurons 2018'
 flylight export-ndjson --entity image --term MB005B --out data/mb005b.ndjson
 flylight export-ndjson --entity release
+flylight export-ndjson --entity compare-line --line MB005B
+flylight export-ndjson --entity compare-release --left-release 'MB Paper 2014' --right-release 'MB Paper 2015'
 ```
 
 ## Notes
@@ -72,5 +74,6 @@ flylight export-ndjson --entity release
 - `search-images` supports field filters over image metadata: area, objective, gender, robot-id, roi.
 - `compare-line` shows shared fields for the same line across synced releases.
 - `compare-release` summarizes added, removed, changed, and unchanged lines between two synced releases.
+- `export-ndjson` also supports `compare-line` and `compare-release` entities for agent ingest.
 - local db path: `data/janelia_splitgal4.sqlite`
 - raw manifest cache: `data/raw_manifests/*.json`
