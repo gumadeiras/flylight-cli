@@ -8,7 +8,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from scripts import janelia_splitgal4 as cli
+from flylight_cli import cli
+from flylight_cli import core
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -24,7 +25,7 @@ def load_text_fixture(name: str) -> str:
 
 class FlylightCliTests(unittest.TestCase):
     def test_parse_release_summary_html(self) -> None:
-        rows = cli.parse_release_summary_html(load_text_fixture("release_summary.html"))
+        rows = core.parse_release_summary_html(load_text_fixture("release_summary.html"))
         self.assertEqual(rows["SS00724"]["robot_id"], "3007645")
         self.assertEqual(rows["SS00724"]["expressed_in_text"], "DNp04")
         self.assertIn("31B08-p65ADZp", rows["SS00724"]["ad_text"])
@@ -33,8 +34,8 @@ class FlylightCliTests(unittest.TestCase):
     def test_sync_manifest_release_and_export_image_ndjson(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "manifest.sqlite"
-            conn = cli.connect_db(db_path)
-            plan = cli.ReleasePlan(
+            conn = core.connect_db(db_path)
+            plan = core.ReleasePlan(
                 release="MB Paper 2014",
                 source_kind="manifest",
                 source_locator="MB Paper 2014/MB_Paper_2014.metadata.json",
@@ -45,8 +46,8 @@ class FlylightCliTests(unittest.TestCase):
                 },
             )
 
-            with mock.patch.object(cli, "fetch_json", return_value=load_json_fixture("release_manifest.json")):
-                result = cli.sync_release_from_plan(conn, plan, raw_dir=None)
+            with mock.patch.object(core, "fetch_json", return_value=load_json_fixture("release_manifest.json")):
+                result = core.sync_release_from_plan(conn, plan, raw_dir=None)
 
             self.assertEqual(result["source_kind"], "manifest")
             self.assertEqual(result["lines"], 1)
@@ -74,9 +75,9 @@ class FlylightCliTests(unittest.TestCase):
     def test_sync_line_metadata_release_with_html_enrichment(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "fallback.sqlite"
-            conn = cli.connect_db(db_path)
-            html_summary = cli.parse_release_summary_html(load_text_fixture("release_summary.html"))
-            plan = cli.ReleasePlan(
+            conn = core.connect_db(db_path)
+            html_summary = core.parse_release_summary_html(load_text_fixture("release_summary.html"))
+            plan = core.ReleasePlan(
                 release="Descending Neurons 2018",
                 source_kind="line-metadata",
                 source_locator="Descending Neurons 2018/",
@@ -96,21 +97,21 @@ class FlylightCliTests(unittest.TestCase):
             )
 
             fixture_map = {
-                cli.s3_url_for_key(plan.metadata_objects[0]["key"]): load_json_fixture("line_metadata_brain.json"),
-                cli.s3_url_for_key(plan.metadata_objects[1]["key"]): load_json_fixture("line_metadata_vnc.json"),
+                core.s3_url_for_key(plan.metadata_objects[0]["key"]): load_json_fixture("line_metadata_brain.json"),
+                core.s3_url_for_key(plan.metadata_objects[1]["key"]): load_json_fixture("line_metadata_vnc.json"),
             }
 
             def fake_fetch_json(url: str):
                 return fixture_map[url]
 
-            with mock.patch.object(cli, "fetch_json", side_effect=fake_fetch_json):
-                result = cli.sync_release_from_plan(conn, plan, raw_dir=None)
+            with mock.patch.object(core, "fetch_json", side_effect=fake_fetch_json):
+                result = core.sync_release_from_plan(conn, plan, raw_dir=None)
 
             self.assertEqual(result["source_kind"], "line-metadata")
             self.assertEqual(result["lines"], 1)
             self.assertEqual(result["images"], 2)
 
-            record = cli.get_line_record(conn, "Descending Neurons 2018", "SS00724")
+            record = core.get_line_record(conn, "Descending Neurons 2018", "SS00724")
             self.assertEqual(record["robot_ids_text"], "3007645")
             self.assertEqual(record["expressed_in_text"], "DNp04")
             self.assertIn("31B08-p65ADZp", record["ad_text"])
@@ -120,8 +121,8 @@ class FlylightCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "incremental.sqlite"
             raw_dir = Path(tmpdir) / "raw"
-            conn = cli.connect_db(db_path)
-            plan = cli.ReleasePlan(
+            conn = core.connect_db(db_path)
+            plan = core.ReleasePlan(
                 release="MB Paper 2014",
                 source_kind="manifest",
                 source_locator="MB Paper 2014/MB_Paper_2014.metadata.json",
@@ -131,8 +132,8 @@ class FlylightCliTests(unittest.TestCase):
                     "last_modified": "2022-01-18T15:57:49.000Z",
                 },
             )
-            with mock.patch.object(cli, "fetch_json", return_value=load_json_fixture("release_manifest.json")):
-                cli.sync_release_from_plan(conn, plan, raw_dir=raw_dir)
+            with mock.patch.object(core, "fetch_json", return_value=load_json_fixture("release_manifest.json")):
+                core.sync_release_from_plan(conn, plan, raw_dir=raw_dir)
 
             args = argparse.Namespace(
                 db=db_path,

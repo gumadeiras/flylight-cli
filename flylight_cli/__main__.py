@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-from flylight_cli.cli import main
+from .cli import main
 
 
 if __name__ == "__main__":

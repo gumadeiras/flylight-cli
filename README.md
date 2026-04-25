@@ -16,23 +16,31 @@ Source order:
 
 ## CLI
 
+Install:
+
+```bash
+pip install -e .
+```
+
 Entry:
 
 ```bash
+flylight --help
 python3 janelia_splitgal4.py
 ```
 
 Examples:
 
 ```bash
-python3 janelia_splitgal4.py releases
-python3 janelia_splitgal4.py sync --release 'MB Paper 2014'
-python3 janelia_splitgal4.py sync --all
-python3 janelia_splitgal4.py sync --all --force
-python3 janelia_splitgal4.py search --term DNg14
-python3 janelia_splitgal4.py show-line SS00724 --release 'Descending Neurons 2018'
-python3 janelia_splitgal4.py export-ndjson --entity line --release 'Descending Neurons 2018'
-python3 janelia_splitgal4.py export-ndjson --entity image --term MB005B --out data/mb005b.ndjson
+flylight releases
+flylight sync --release 'MB Paper 2014'
+flylight sync --all
+flylight sync --all --force
+flylight sync --release 'Descending Neurons 2018' --workers 8
+flylight search --term DNg14
+flylight show-line SS00724 --release 'Descending Neurons 2018'
+flylight export-ndjson --entity line --release 'Descending Neurons 2018'
+flylight export-ndjson --entity image --term MB005B --out data/mb005b.ndjson
 ```
 
 ## Notes

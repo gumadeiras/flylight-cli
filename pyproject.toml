@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flylight-cli"
+version = "0.1.0"
+description = "Agent-friendly local index for Janelia FlyLight Split-GAL4 resources"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "Gustavo Madeira Santana" }
+]
+dependencies = []
+
+[project.scripts]
+flylight = "flylight_cli.cli:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["flylight_cli*"]
