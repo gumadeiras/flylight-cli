@@ -41,14 +41,17 @@ flylight sync --all --refresh-cache
 flylight sync --release 'Descending Neurons 2018' --workers 8
 flylight sync-plan --all
 flylight sync-plan --release 'MB Paper 2014' --offline
+flylight reindex
 flylight cache-info
 flylight schema --entity line
 flylight examples --topic release-diff
 flylight snapshot-export --out data/flylight-snapshot.tar.gz
 flylight snapshot-import data/flylight-snapshot.tar.gz --force
 flylight search --expressed-in DNp04 --ad 31B08 --source-kind line-metadata
+flylight search --em-cell-type EPG
 flylight search-text 'DNp04 AND 31B08'
 flylight search-images --area Brain --objective 20x --robot-id 3007645
+flylight search-images --em-cell-type EPG
 flylight show-line SS00724 --release 'Descending Neurons 2018'
 flylight show-image 6878306
 flylight compare-line MB005B
@@ -68,6 +71,7 @@ flylight export-ndjson --entity compare-release --left-release 'MB Paper 2014' -
 - `--offline` disables network access and uses cached HTTP responses only.
 - cache path: `data/http_cache`
 - `sync-plan` is a dry-run: source kind, cache coverage, db coverage, skip vs sync decision.
+- `reindex` rebuilds derived searchable fields from stored raw image payloads; use it after schema upgrades on an existing db.
 - `snapshot-export` bundles sqlite + raw manifests + HTTP cache for portable offline reuse.
 - `snapshot-import` restores that bundle on another machine or working copy.
 - `schema` shows agent-facing row shapes and producer commands.
@@ -77,7 +81,9 @@ flylight export-ndjson --entity compare-release --left-release 'MB Paper 2014' -
 - missing release manifest: fallback walks line dirs + metadata jsons.
 - CGI summary enriches line-level fields like expressed-in, genotype, AD, DBD.
 - line/image exports include normalized arrays alongside text fields.
+- line/image records now include normalized `em_cell_types` derived from raw `em_cell_type` metadata when present.
 - `search` supports field filters over line metadata: AD, DBD, genotype, expressed-in, robot-id, source-kind.
+- `search` and `search-images` also support exact `--em-cell-type` matching.
 - `search-text` uses SQLite FTS for faster boolean/full-text matching over line text fields.
 - `search-images` supports field filters over image metadata: area, objective, gender, robot-id, roi.
 - `compare-line` shows shared fields for the same line across synced releases.

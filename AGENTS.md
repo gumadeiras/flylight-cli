@@ -27,6 +27,7 @@ Cache/offline:
 - use `--offline` to forbid network and use cache only
 - inspect cache: `flylight cache-info`
 - dry-run sync: `flylight sync-plan --all`
+- rebuild derived fields: `flylight reindex`
 
 Warm data:
 - one release: `flylight sync --release 'MB Paper 2014'`
@@ -41,6 +42,7 @@ Portable offline bundle:
 
 Best query surfaces:
 - line filters: `flylight search ...`
+- EM term filter: `flylight search --em-cell-type EPG`
 - full-text line search: `flylight search-text 'DNp04 AND 31B08'`
 - image filters: `flylight search-images ...`
 - line detail: `flylight show-line SS00724 --release 'Descending Neurons 2018'`
@@ -60,6 +62,7 @@ Best agent export surfaces:
 
 Notes:
 - normalized arrays are included in exports where relevant: annotations, rois, robot_ids, expressed_in, genotype/ad/dbd parts
+- EM cell type terms are normalized into `em_cell_types` when upstream raw metadata includes `em_cell_type`
 - `--raw` includes fuller embedded records/payloads when supported
 - for repeated agent workflows, prefer NDJSON export over parsing human CLI output
 - `sync-plan` is the best preflight for offline reuse; it shows cache coverage and whether incremental sync would skip or run
