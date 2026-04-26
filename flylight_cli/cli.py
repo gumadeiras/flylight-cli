@@ -18,6 +18,7 @@ from .core import (
     should_skip_incremental,
     sync_release_from_plan,
 )
+from .examples import EXAMPLES, examples_for_topic
 from .db import connect_db, ensure_parent
 from .normalize import normalize_image_record
 from .normalize import normalize_line_record
@@ -143,6 +144,19 @@ def cmd_schema(args: argparse.Namespace) -> int:
         print(f"key_fields\t{' | '.join(info['key_fields'])}")
         print(f"produced_by\t{' | '.join(info['produced_by'])}")
         print(f"fields\t{' | '.join(info['fields'])}")
+    return 0
+
+
+def cmd_examples(args: argparse.Namespace) -> int:
+    payload = examples_for_topic(args.topic)
+    if args.json:
+        print(json.dumps(payload, indent=2))
+        return 0
+    for topic, info in payload.items():
+        print(topic)
+        print(f"description\t{info['description']}")
+        for command in info["commands"]:
+            print(f"command\t{command}")
     return 0
 
 
@@ -493,6 +507,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--entity", choices=sorted(SCHEMA.keys()))
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_schema)
+
+    p = sub.add_parser("examples", help="show canned agent workflows and command recipes")
+    p.add_argument("--topic", choices=sorted(EXAMPLES.keys()))
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_examples)
 
     p = sub.add_parser("snapshot-export", help="bundle db, raw manifests, and HTTP cache for offline reuse")
     p.add_argument("--db", type=Path, default=DEFAULT_DB)
