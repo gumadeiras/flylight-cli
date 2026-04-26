@@ -54,6 +54,7 @@ Best agent export surfaces:
 - line diffs: `flylight export-ndjson --entity compare-line --line MB005B`
 - release diffs: `flylight export-ndjson --entity compare-release --left-release 'MB Paper 2014' --right-release 'MB Paper 2015'`
 - schema introspection: `flylight schema --entity line`
+- canned recipes: `flylight examples --topic release-diff`
 
 Notes:
 - normalized arrays are included in exports where relevant: annotations, rois, robot_ids, expressed_in, genotype/ad/dbd parts
