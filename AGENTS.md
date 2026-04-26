@@ -26,10 +26,12 @@ Cache/offline:
 - use `--refresh-cache` to re-fetch upstream
 - use `--offline` to forbid network and use cache only
 - inspect cache: `flylight cache-info`
+- dry-run sync: `flylight sync-plan --all`
 
 Warm data:
 - one release: `flylight sync --release 'MB Paper 2014'`
 - all releases: `flylight sync --all`
+- inspect sync coverage first: `flylight sync-plan --all`
 - refresh cache while syncing: `flylight sync --all --refresh-cache`
 - offline sync from warmed cache: `flylight sync --all --offline`
 
@@ -60,3 +62,4 @@ Notes:
 - normalized arrays are included in exports where relevant: annotations, rois, robot_ids, expressed_in, genotype/ad/dbd parts
 - `--raw` includes fuller embedded records/payloads when supported
 - for repeated agent workflows, prefer NDJSON export over parsing human CLI output
+- `sync-plan` is the best preflight for offline reuse; it shows cache coverage and whether incremental sync would skip or run

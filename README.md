@@ -39,6 +39,8 @@ flylight sync --all --force
 flylight sync --all --offline
 flylight sync --all --refresh-cache
 flylight sync --release 'Descending Neurons 2018' --workers 8
+flylight sync-plan --all
+flylight sync-plan --release 'MB Paper 2014' --offline
 flylight cache-info
 flylight schema --entity line
 flylight examples --topic release-diff
@@ -65,11 +67,13 @@ flylight export-ndjson --entity compare-release --left-release 'MB Paper 2014' -
 - HTTP fetches are cache-first by default; cached responses are reused until you pass `--refresh-cache`.
 - `--offline` disables network access and uses cached HTTP responses only.
 - cache path: `data/http_cache`
+- `sync-plan` is a dry-run: source kind, cache coverage, db coverage, skip vs sync decision.
 - `snapshot-export` bundles sqlite + raw manifests + HTTP cache for portable offline reuse.
 - `snapshot-import` restores that bundle on another machine or working copy.
 - `schema` shows agent-facing row shapes and producer commands.
 - `examples` shows canned command recipes for common agent workflows.
 - `sync --all` is incremental by default; unchanged releases skip.
+- `cache-info` also reports cache suffix counts and oldest/newest cached timestamps.
 - missing release manifest: fallback walks line dirs + metadata jsons.
 - CGI summary enriches line-level fields like expressed-in, genotype, AD, DBD.
 - line/image exports include normalized arrays alongside text fields.
