@@ -35,7 +35,7 @@ def get_image_records(
         for row in conn.execute(
             """
             SELECT i.image_id, i.release, i.line, i.robot_id, i.slide_code, i.objective, i.area, i.tile, i.gender, i.roi,
-                   i.annotations_text, i.metadata_key, i.metadata_url, i.raw_json, r.source_kind
+                   i.annotations_text, i.em_cell_types_text, i.metadata_key, i.metadata_url, i.raw_json, r.source_kind
             FROM images i
             JOIN releases r ON r.name = i.release
             WHERE i.release = ? AND i.line = ?
@@ -58,7 +58,7 @@ def get_image_record(conn: sqlite3.Connection, image_id: int, include_raw: bool 
     row = conn.execute(
         """
         SELECT i.image_id, i.release, i.line, i.robot_id, i.slide_code, i.objective, i.area, i.tile, i.gender, i.roi,
-               i.annotations_text, i.metadata_key, i.metadata_url, i.raw_json, r.source_kind
+               i.annotations_text, i.em_cell_types_text, i.metadata_key, i.metadata_url, i.raw_json, r.source_kind
         FROM images i
         JOIN releases r ON r.name = i.release
         WHERE i.image_id = ?
@@ -105,7 +105,7 @@ def get_line_record(
     row = conn.execute(
         """
         SELECT lr.release, lr.line, lr.image_count, lr.sample_count, lr.annotations_text, lr.rois_text,
-               lr.robot_ids_text, lr.expressed_in_text, lr.genotype_text, lr.ad_text, lr.dbd_text,
+               lr.robot_ids_text, lr.expressed_in_text, lr.genotype_text, lr.ad_text, lr.dbd_text, lr.em_cell_types_text,
                r.source_kind, r.source_locator, r.source_token
         FROM line_releases lr
         JOIN releases r ON r.name = lr.release
@@ -162,7 +162,7 @@ def get_release_line_rows(conn: sqlite3.Connection, release: str) -> dict[str, d
         for row in conn.execute(
             """
             SELECT lr.release, lr.line, lr.image_count, lr.sample_count, lr.annotations_text, lr.rois_text,
-                   lr.robot_ids_text, lr.expressed_in_text, lr.genotype_text, lr.ad_text, lr.dbd_text,
+                   lr.robot_ids_text, lr.expressed_in_text, lr.genotype_text, lr.ad_text, lr.dbd_text, lr.em_cell_types_text,
                    r.source_kind, r.source_locator, r.source_token
             FROM line_releases lr
             JOIN releases r ON r.name = lr.release
@@ -186,6 +186,7 @@ def comparable_line_fields(record: dict[str, Any]) -> dict[str, Any]:
         "genotype_parts": record["genotype_parts"],
         "ad_parts": record["ad_parts"],
         "dbd_parts": record["dbd_parts"],
+        "em_cell_types": record["em_cell_types"],
     }
 
 
@@ -195,7 +196,7 @@ def compare_line_records(conn: sqlite3.Connection, line: str, releases: list[str
         raise SystemExit(f"no line found: {line}")
     records = [get_line_record(conn, item["release"], item["line"], include_raw=False) for item in matches]
     shared_fields = {}
-    for field in ["annotations", "rois", "robot_ids", "expressed_in", "genotype_parts", "ad_parts", "dbd_parts"]:
+    for field in ["annotations", "rois", "robot_ids", "expressed_in", "genotype_parts", "ad_parts", "dbd_parts", "em_cell_types"]:
         sets = [set(record[field]) for record in records]
         shared_fields[field] = sorted(set.intersection(*sets)) if sets else []
     return {

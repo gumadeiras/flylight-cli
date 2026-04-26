@@ -14,6 +14,32 @@ def ensure_column(conn: sqlite3.Connection, table: str, column: str, spec: str) 
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {spec}")
 
 
+def ensure_line_search_fts_schema(conn: sqlite3.Connection) -> None:
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'line_search_fts'"
+    ).fetchone()
+    existing_sql = row["sql"] if row is not None else ""
+    if row is not None and "em_cell_types_text" not in existing_sql:
+        conn.execute("DROP TABLE line_search_fts")
+    conn.execute(
+        """
+        CREATE VIRTUAL TABLE IF NOT EXISTS line_search_fts USING fts5(
+          release UNINDEXED,
+          line,
+          annotations_text,
+          rois_text,
+          robot_ids_text,
+          expressed_in_text,
+          genotype_text,
+          ad_text,
+          dbd_text,
+          em_cell_types_text,
+          tokenize='unicode61'
+        )
+        """
+    )
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(
         """
@@ -63,28 +89,19 @@ def init_db(conn: sqlite3.Connection) -> None:
     ensure_column(conn, "line_releases", "genotype_text", "genotype_text TEXT NOT NULL DEFAULT ''")
     ensure_column(conn, "line_releases", "ad_text", "ad_text TEXT NOT NULL DEFAULT ''")
     ensure_column(conn, "line_releases", "dbd_text", "dbd_text TEXT NOT NULL DEFAULT ''")
+    ensure_column(conn, "line_releases", "em_cell_types_text", "em_cell_types_text TEXT NOT NULL DEFAULT ''")
     ensure_column(conn, "images", "metadata_key", "metadata_key TEXT")
     ensure_column(conn, "images", "metadata_url", "metadata_url TEXT")
+    ensure_column(conn, "images", "em_cell_types_text", "em_cell_types_text TEXT NOT NULL DEFAULT ''")
     conn.executescript(
         """
         CREATE INDEX IF NOT EXISTS idx_line_releases_line ON line_releases(line);
         CREATE INDEX IF NOT EXISTS idx_images_line ON images(line);
         CREATE INDEX IF NOT EXISTS idx_images_release_line ON images(release, line);
         CREATE INDEX IF NOT EXISTS idx_images_roi ON images(roi);
-        CREATE VIRTUAL TABLE IF NOT EXISTS line_search_fts USING fts5(
-          release UNINDEXED,
-          line,
-          annotations_text,
-          rois_text,
-          robot_ids_text,
-          expressed_in_text,
-          genotype_text,
-          ad_text,
-          dbd_text,
-          tokenize='unicode61'
-        );
         """
     )
+    ensure_line_search_fts_schema(conn)
 
 
 def connect_db(path: Path) -> sqlite3.Connection:
@@ -103,10 +120,10 @@ def refresh_release_fts(conn: sqlite3.Connection, release: str) -> None:
         """
         INSERT INTO line_search_fts(
           release, line, annotations_text, rois_text, robot_ids_text,
-          expressed_in_text, genotype_text, ad_text, dbd_text
+          expressed_in_text, genotype_text, ad_text, dbd_text, em_cell_types_text
         )
         SELECT release, line, annotations_text, rois_text, robot_ids_text,
-               expressed_in_text, genotype_text, ad_text, dbd_text
+               expressed_in_text, genotype_text, ad_text, dbd_text, em_cell_types_text
         FROM line_releases
         WHERE release = ?
         """,

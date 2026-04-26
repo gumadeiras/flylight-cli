@@ -36,6 +36,7 @@ from .records import (
     get_release_record,
     get_release_records,
 )
+from .reindex import reindex_em_cell_types
 from .schema import SCHEMA, schema_for_entity
 from .snapshot import export_snapshot, import_snapshot
 from .sync_plan import summarize_release_sync
@@ -258,6 +259,27 @@ def cmd_snapshot_import(args: argparse.Namespace) -> int:
         )
     )
     return 0
+
+
+def cmd_reindex(args: argparse.Namespace) -> int:
+    conn = connect_db(args.db)
+    try:
+        payload = reindex_em_cell_types(conn, release=args.release)
+        if args.json:
+            print(json.dumps(payload, indent=2))
+            return 0
+        print(
+            "\t".join(
+                [
+                    f"releases={payload['release_count']}",
+                    f"lines={payload['line_count']}",
+                    f"images={payload['image_count']}",
+                ]
+            )
+        )
+        return 0
+    finally:
+        conn.close()
 
 
 def cmd_search(args: argparse.Namespace) -> int:
@@ -598,6 +620,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_snapshot_import)
 
+    p = sub.add_parser("reindex", help="rebuild derived searchable fields from synced raw image payloads")
+    p.add_argument("--db", type=Path, default=DEFAULT_DB)
+    p.add_argument("--release")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_reindex)
+
     p = sub.add_parser("search", help="search synced line records")
     p.add_argument("--db", type=Path, default=DEFAULT_DB)
     p.add_argument("--release")
@@ -609,6 +637,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--genotype")
     p.add_argument("--ad")
     p.add_argument("--dbd")
+    p.add_argument("--em-cell-type")
     p.add_argument("--source-kind", choices=["manifest", "line-metadata", "cgi-html", "empty"])
     p.add_argument("--min-images", type=int)
     p.add_argument("--min-samples", type=int)
@@ -636,6 +665,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--area")
     p.add_argument("--objective")
     p.add_argument("--gender")
+    p.add_argument("--em-cell-type")
     p.add_argument("--source-kind", choices=["manifest", "line-metadata", "cgi-html", "empty"])
     p.add_argument("--term")
     p.add_argument("--limit", type=int, default=25)
@@ -683,6 +713,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--genotype")
     p.add_argument("--ad")
     p.add_argument("--dbd")
+    p.add_argument("--em-cell-type")
     p.add_argument("--source-kind", choices=["manifest", "line-metadata", "cgi-html", "empty"])
     p.add_argument("--min-images", type=int)
     p.add_argument("--min-samples", type=int)
@@ -711,6 +742,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--genotype")
     p.add_argument("--ad")
     p.add_argument("--dbd")
+    p.add_argument("--em-cell-type")
     p.add_argument("--area")
     p.add_argument("--objective")
     p.add_argument("--gender")

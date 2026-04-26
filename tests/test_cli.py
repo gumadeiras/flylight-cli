@@ -68,6 +68,159 @@ class FlylightCliTests(unittest.TestCase):
             ["MB Paper 2014", "Rubin & Aso 2023"],
         )
 
+    def test_sync_manifest_indexes_em_cell_type_terms(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "em.sqlite"
+            conn = core.connect_db(db_path)
+            plan = core.ReleasePlan(
+                release="Wolff et al 2024",
+                source_kind="manifest",
+                source_locator="Wolff et al 2024/Wolff_et_al_2024.metadata.json",
+                source_token="manifest-token",
+                manifest_object={
+                    "key": "Wolff et al 2024/Wolff_et_al_2024.metadata.json",
+                    "last_modified": "2024-01-01T00:00:00.000Z",
+                },
+            )
+            manifest = copy.deepcopy(load_json_fixture("release_manifest.json"))
+            manifest["images"][0]["em_cell_type"] = json.dumps(
+                [
+                    {"dataset": "hemibrain:v1.2.1", "term": "EPG", "confidence": "Probable"},
+                    {"dataset": "hemibrain:v1.2.1", "term": "PEN", "confidence": "Probable"},
+                ]
+            )
+            sibling = copy.deepcopy(manifest["images"][0])
+            sibling["id"] = 6878307
+            sibling["line"] = "MB999T"
+            sibling["em_cell_type"] = json.dumps(
+                [{"dataset": "hemibrain:v1.2.1", "term": "EPGt", "confidence": "Probable"}]
+            )
+            manifest["lines"].append("MB999T")
+            manifest["images"].append(sibling)
+
+            with mock.patch.object(core, "fetch_json", return_value=manifest):
+                core.sync_release_from_plan(conn, plan, raw_dir=None)
+
+            line_record = core.get_line_record(conn, "Wolff et al 2024", "MB005B")
+            self.assertEqual(line_record["em_cell_types"], ["EPG", "PEN"])
+
+            search_args = argparse.Namespace(
+                db=db_path,
+                release="Wolff et al 2024",
+                line=None,
+                annotation=None,
+                roi=None,
+                robot_id=None,
+                expressed_in=None,
+                genotype=None,
+                ad=None,
+                dbd=None,
+                em_cell_type="EPG",
+                source_kind="manifest",
+                min_images=None,
+                min_samples=None,
+                term=None,
+                limit=10,
+                json=True,
+            )
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                cli.cmd_search(search_args)
+            search_rows = json.loads(stdout.getvalue())
+            self.assertEqual([row["line"] for row in search_rows], ["MB005B"])
+            self.assertEqual(search_rows[0]["em_cell_types"], ["EPG", "PEN"])
+
+            epgt_args = argparse.Namespace(**{**search_args.__dict__, "em_cell_type": "EPGt"})
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                cli.cmd_search(epgt_args)
+            epgt_rows = json.loads(stdout.getvalue())
+            self.assertEqual([row["line"] for row in epgt_rows], ["MB999T"])
+
+            text_args = argparse.Namespace(
+                db=db_path,
+                query="EPG",
+                release="Wolff et al 2024",
+                source_kind="manifest",
+                limit=10,
+                json=True,
+            )
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                cli.cmd_search_text(text_args)
+            text_rows = json.loads(stdout.getvalue())
+            self.assertEqual([row["line"] for row in text_rows], ["MB005B"])
+
+            image_args = argparse.Namespace(
+                db=db_path,
+                release="Wolff et al 2024",
+                line=None,
+                annotation=None,
+                roi=None,
+                robot_id=None,
+                area=None,
+                objective=None,
+                gender=None,
+                em_cell_type="EPG",
+                source_kind="manifest",
+                term=None,
+                limit=10,
+                raw=False,
+                json=True,
+            )
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                cli.cmd_search_images(image_args)
+            image_rows = json.loads(stdout.getvalue())
+            self.assertEqual(len(image_rows), 1)
+            self.assertEqual(image_rows[0]["em_cell_types"], ["EPG", "PEN"])
+            conn.close()
+
+    def test_reindex_restores_em_cell_type_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "reindex.sqlite"
+            conn = core.connect_db(db_path)
+            plan = core.ReleasePlan(
+                release="Wolff et al 2024",
+                source_kind="manifest",
+                source_locator="Wolff et al 2024/Wolff_et_al_2024.metadata.json",
+                source_token="manifest-token",
+                manifest_object={
+                    "key": "Wolff et al 2024/Wolff_et_al_2024.metadata.json",
+                    "last_modified": "2024-01-01T00:00:00.000Z",
+                },
+            )
+            manifest = copy.deepcopy(load_json_fixture("release_manifest.json"))
+            manifest["images"][0]["em_cell_type"] = json.dumps(
+                [{"dataset": "hemibrain:v1.2.1", "term": "EPG", "confidence": "Probable"}]
+            )
+
+            with mock.patch.object(core, "fetch_json", return_value=manifest):
+                core.sync_release_from_plan(conn, plan, raw_dir=None)
+
+            with conn:
+                conn.execute("UPDATE images SET em_cell_types_text = ''")
+                conn.execute("UPDATE line_releases SET em_cell_types_text = ''")
+                conn.execute("DELETE FROM line_search_fts WHERE release = ?", ("Wolff et al 2024",))
+
+            args = argparse.Namespace(db=db_path, release="Wolff et al 2024", json=True)
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                cli.cmd_reindex(args)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["release_count"], 1)
+            self.assertEqual(payload["line_count"], 1)
+            self.assertEqual(payload["image_count"], 1)
+
+            text_args = argparse.Namespace(
+                db=db_path,
+                query="EPG",
+                release="Wolff et al 2024",
+                source_kind="manifest",
+                limit=10,
+                json=True,
+            )
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                cli.cmd_search_text(text_args)
+            text_rows = json.loads(stdout.getvalue())
+            self.assertEqual([row["line"] for row in text_rows], ["MB005B"])
+            conn.close()
+
     def test_schema_command(self) -> None:
         all_args = argparse.Namespace(entity=None, json=True)
         with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:

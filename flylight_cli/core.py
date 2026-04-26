@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 
 from .cache import DEFAULT_CACHE_DIR, OfflineCacheMiss, fetch_bytes as cached_fetch_bytes
 from .db import connect_db, ensure_parent, refresh_release_fts
-from .normalize import normalize_image_record, normalize_line_record, normalize_release_record
+from .normalize import extract_em_cell_type_terms, normalize_image_record, normalize_line_record, normalize_release_record
 from .records import asset_urls_from_image, get_db_stats, get_image_record, get_image_records, get_line_record, get_release_record, get_release_records
 
 
@@ -26,7 +26,7 @@ S3_LIST_ROOT = f"{S3_HTTP_ROOT}/"
 SPLITGAL4_INDEX_URL = "https://splitgal4.janelia.org/cgi-bin/splitgal4.cgi"
 SPLITGAL4_SUMMARY_URL = "https://splitgal4.janelia.org/cgi-bin/splitgal4_summary.cgi"
 NS = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
-USER_AGENT = "flylight-cli/0.11"
+USER_AGENT = "flylight-cli/0.12"
 DEFAULT_DB = Path("data/janelia_splitgal4.sqlite")
 DEFAULT_RAW_DIR = Path("data/raw_manifests")
 DEFAULT_WORKERS = 12
@@ -295,6 +295,7 @@ class LineAggregate:
     annotations: set[str] | None = None
     rois: set[str] | None = None
     robot_ids: set[str] | None = None
+    em_cell_types: set[str] | None = None
     expressed_in_text: str = ""
     genotype_text: str = ""
     ad_text: str = ""
@@ -305,6 +306,7 @@ class LineAggregate:
         self.annotations = set()
         self.rois = set()
         self.robot_ids = set()
+        self.em_cell_types = set()
 
     def merge_payload(self, payload: dict[str, Any]) -> None:
         self.image_count += 1
@@ -321,6 +323,8 @@ class LineAggregate:
         robot_id = str(payload.get("robot_id", "") or "").strip()
         if robot_id:
             self.robot_ids.add(robot_id)
+        for term in extract_em_cell_type_terms(payload):
+            self.em_cell_types.add(term)
         if not self.genotype_text:
             self.genotype_text = str(payload.get("genotype", "") or "").strip()
         if not self.ad_text:
@@ -349,6 +353,7 @@ def build_image_row(
     metadata_key: str | None = None,
 ) -> tuple[Any, ...]:
     annotations = normalize_annotations(payload.get("annotations"))
+    em_cell_types = extract_em_cell_type_terms(payload)
     return (
         extract_image_id(payload, metadata_key or f"{release}/{line}/manifest"),
         release,
@@ -361,6 +366,7 @@ def build_image_row(
         str(payload.get("gender", "") or "").strip() or None,
         str(payload.get("roi", "") or "").strip() or None,
         " | ".join(sorted(set(annotations))),
+        " | ".join(em_cell_types),
         metadata_key,
         s3_url_for_key(metadata_key) if metadata_key else None,
         json_dumps(payload),
@@ -420,6 +426,7 @@ def store_release(
                 aggregate.genotype_text,
                 aggregate.ad_text,
                 aggregate.dbd_text,
+                " | ".join(sorted(aggregate.em_cell_types)),
             )
         )
 
@@ -464,9 +471,9 @@ def store_release(
             """
             INSERT INTO line_releases(
               release, line, image_count, sample_count, annotations_text, rois_text, robot_ids_text,
-              expressed_in_text, genotype_text, ad_text, dbd_text
+              expressed_in_text, genotype_text, ad_text, dbd_text, em_cell_types_text
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             line_rows,
         )
@@ -474,9 +481,9 @@ def store_release(
             """
             INSERT INTO images(
               image_id, release, line, robot_id, slide_code, objective, area, tile, gender, roi,
-              annotations_text, metadata_key, metadata_url, raw_json
+              annotations_text, em_cell_types_text, metadata_key, metadata_url, raw_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             image_rows,
         )
