@@ -71,6 +71,25 @@ def load_cached_bytes(url: str, cache_dir: Path | None = None) -> bytes | None:
     return cache_path.read_bytes()
 
 
+def cache_entry_for_url(url: str, cache_dir: Path | None = None) -> dict[str, int | str] | None:
+    cache_path = cache_path_for_url(url, cache_dir=cache_dir)
+    if not cache_path.exists():
+        return None
+    payload: dict[str, int | str] = {
+        "url": url,
+        "cache_path": str(cache_path),
+        "bytes": cache_path.stat().st_size,
+        "suffix": cache_path.suffix,
+    }
+    meta_path = meta_path_for_cache(cache_path)
+    if meta_path.exists():
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        cached_at = meta.get("cached_at")
+        if isinstance(cached_at, str) and cached_at:
+            payload["cached_at"] = cached_at
+    return payload
+
+
 def write_cached_bytes(url: str, payload: bytes, cache_dir: Path | None = None) -> Path:
     cache_path = cache_path_for_url(url, cache_dir=cache_dir)
     ensure_cache_parent(cache_path)
@@ -109,10 +128,32 @@ def fetch_bytes(url: str, user_agent: str) -> bytes:
 def cache_stats(cache_dir: Path | None = None) -> dict[str, int | str]:
     cache_dir = cache_dir or _cache_options.cache_dir
     if not cache_dir.exists():
-        return {"cache_dir": str(cache_dir), "entries": 0, "bytes": 0}
+        return {
+            "cache_dir": str(cache_dir),
+            "entries": 0,
+            "bytes": 0,
+            "suffix_counts": {},
+            "oldest_cached_at": None,
+            "newest_cached_at": None,
+        }
     paths = [path for path in cache_dir.rglob("*") if path.is_file() and not path.name.endswith(".meta.json")]
+    suffix_counts: dict[str, int] = {}
+    cached_at_values: list[str] = []
+    for path in paths:
+        suffix = path.suffix or ".bin"
+        suffix_counts[suffix] = suffix_counts.get(suffix, 0) + 1
+        meta_path = meta_path_for_cache(path)
+        if not meta_path.exists():
+            continue
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        cached_at = meta.get("cached_at")
+        if isinstance(cached_at, str) and cached_at:
+            cached_at_values.append(cached_at)
     return {
         "cache_dir": str(cache_dir),
         "entries": len(paths),
         "bytes": sum(path.stat().st_size for path in paths),
+        "suffix_counts": suffix_counts,
+        "oldest_cached_at": min(cached_at_values) if cached_at_values else None,
+        "newest_cached_at": max(cached_at_values) if cached_at_values else None,
     }

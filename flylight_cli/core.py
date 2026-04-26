@@ -25,7 +25,7 @@ S3_HTTP_ROOT = f"https://s3.amazonaws.com/{BUCKET}"
 S3_LIST_ROOT = f"{S3_HTTP_ROOT}/"
 SPLITGAL4_SUMMARY_URL = "https://splitgal4.janelia.org/cgi-bin/splitgal4_summary.cgi"
 NS = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
-USER_AGENT = "flylight-cli/0.10"
+USER_AGENT = "flylight-cli/0.11"
 DEFAULT_DB = Path("data/janelia_splitgal4.sqlite")
 DEFAULT_RAW_DIR = Path("data/raw_manifests")
 DEFAULT_WORKERS = 12
@@ -147,7 +147,7 @@ def strip_html(raw: str) -> str:
 
 
 def fetch_release_summary_html(release: str) -> str | None:
-    url = f"{SPLITGAL4_SUMMARY_URL}?{urlencode({'_gsearch': 'Search', 'alps_release': release})}"
+    url = release_summary_url(release)
     try:
         html = fetch_text(url)
     except Exception:
@@ -155,6 +155,10 @@ def fetch_release_summary_html(release: str) -> str | None:
     if 'id="linelist"' not in html:
         return None
     return html
+
+
+def release_summary_url(release: str) -> str:
+    return f"{SPLITGAL4_SUMMARY_URL}?{urlencode({'_gsearch': 'Search', 'alps_release': release})}"
 
 
 def parse_release_summary_html(html: str) -> dict[str, dict[str, str]]:

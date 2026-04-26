@@ -165,6 +165,7 @@ class FlylightCliTests(unittest.TestCase):
             self.assertEqual(image_row["image_id"], 6878306)
             self.assertEqual(image_row["source_kind"], "manifest")
             self.assertEqual(image_row["line"], "MB005B")
+            conn.close()
 
     def test_sync_manifest_release_works_offline_from_cache(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -193,6 +194,7 @@ class FlylightCliTests(unittest.TestCase):
                     result = core.sync_release_from_plan(conn, plan, raw_dir=None)
                 self.assertEqual(result["lines"], 1)
                 self.assertEqual(result["images"], 1)
+                conn.close()
             finally:
                 cache.set_cache_options(cache_dir=cache.DEFAULT_CACHE_DIR, offline=False, refresh=False)
 
@@ -291,6 +293,7 @@ class FlylightCliTests(unittest.TestCase):
             self.assertEqual(image_rows[0]["line"], "SS00724")
             self.assertEqual(image_rows[0]["area"], "Brain")
             self.assertEqual(image_rows[0]["source_kind"], "line-metadata")
+            conn.close()
 
     def test_cmd_sync_incremental_skips_up_to_date_release(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -327,6 +330,7 @@ class FlylightCliTests(unittest.TestCase):
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["synced"], [])
             self.assertEqual(payload["skipped"][0]["reason"], "up_to_date")
+            conn.close()
 
     def test_release_export_and_stats(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -397,6 +401,7 @@ class FlylightCliTests(unittest.TestCase):
             self.assertEqual(release_payload["release"], "MB Paper 2014")
             self.assertEqual(len(release_payload["lines"]), 1)
             self.assertEqual(release_payload["lines"][0]["line"], "MB005B")
+            conn.close()
 
     def test_search_text_and_compare_line(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -459,6 +464,7 @@ class FlylightCliTests(unittest.TestCase):
                 {"13F02-p65ADZp in attP40/CyO", "34A03-ZpGdbd in attP2", "w"},
             )
             self.assertEqual(len(payload["releases"]), 2)
+            conn.close()
 
     def test_compare_release(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -567,6 +573,7 @@ class FlylightCliTests(unittest.TestCase):
             changed = next(row for row in rows if row.get("status") == "changed")
             self.assertEqual(added["line"], "MB999Z")
             self.assertEqual(changed["left"]["line"], "MB005B")
+            conn.close()
 
     def test_snapshot_export_import_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -631,11 +638,13 @@ class FlylightCliTests(unittest.TestCase):
             self.assertTrue((import_args.raw_dir / "mb_paper_2014.json").exists())
             imported_cache_stats = cache.cache_stats(import_args.cache_dir)
             self.assertEqual(imported_cache_stats["entries"], 1)
+            restored_conn.close()
+            conn.close()
 
     def test_compare_line_export_requires_line(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "empty.sqlite"
-            core.connect_db(db_path)
+            core.connect_db(db_path).close()
             args = argparse.Namespace(
                 db=db_path,
                 entity="compare-line",

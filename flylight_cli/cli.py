@@ -38,6 +38,7 @@ from .records import (
 )
 from .schema import SCHEMA, schema_for_entity
 from .snapshot import export_snapshot, import_snapshot
+from .sync_plan import summarize_release_sync
 
 
 def apply_cache_args(args: argparse.Namespace) -> None:
@@ -129,7 +130,58 @@ def cmd_cache_info(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(payload, indent=2))
         return 0
-    print("\t".join([payload["cache_dir"], f"entries={payload['entries']}", f"bytes={payload['bytes']}"]))
+    fields = [payload["cache_dir"], f"entries={payload['entries']}", f"bytes={payload['bytes']}"]
+    if payload.get("oldest_cached_at"):
+        fields.append(f"oldest={payload['oldest_cached_at']}")
+    if payload.get("newest_cached_at"):
+        fields.append(f"newest={payload['newest_cached_at']}")
+    print("\t".join(fields))
+    for suffix, count in sorted(payload["suffix_counts"].items()):
+        print(f"suffix\t{suffix}\t{count}")
+    return 0
+
+
+def cmd_sync_plan(args: argparse.Namespace) -> int:
+    apply_cache_args(args)
+    incremental = args.incremental or (args.all and not args.force)
+    workers = getattr(args, "workers", DEFAULT_WORKERS)
+    conn = connect_db(args.db)
+    try:
+        releases = args.release or ([] if not args.all else list_releases())
+        if not releases:
+            raise SystemExit("choose --all or at least one --release")
+        rows = []
+        for release in releases:
+            plan = plan_release(release, include_html_fallback=True, workers=workers)
+            rows.append(
+                summarize_release_sync(
+                    conn,
+                    plan,
+                    cache_dir=args.cache_dir,
+                    incremental=incremental,
+                )
+            )
+    except OfflineCacheMiss as exc:
+        raise SystemExit(str(exc)) from exc
+    finally:
+        conn.close()
+
+    payload = {"incremental": incremental, "releases": rows}
+    if args.json:
+        print(json.dumps(payload, indent=2))
+        return 0
+    for row in rows:
+        print(
+            "\t".join(
+                [
+                    row["release"],
+                    row["source_kind"],
+                    f"action={row['action']}",
+                    f"reason={row['reason']}",
+                    f"cache={row['cache']['cached_inputs']}/{row['cache']['total_inputs']}",
+                ]
+            )
+        )
     return 0
 
 
@@ -497,6 +549,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true")
     p.add_argument("--verbose", action="store_true")
     p.set_defaults(func=cmd_sync)
+
+    p = sub.add_parser("sync-plan", help="dry-run sync planning with cache and db coverage")
+    add_cache_args(p)
+    p.add_argument("--db", type=Path, default=DEFAULT_DB)
+    p.add_argument("--release", action="append", help="repeatable release name")
+    p.add_argument("--all", action="store_true", help="plan every release found in the bucket")
+    p.add_argument("--incremental", action="store_true", help="mark unchanged releases as skips")
+    p.add_argument("--force", action="store_true", help="disable incremental skip")
+    p.add_argument("--workers", type=int, default=DEFAULT_WORKERS, help="parallel workers for fallback planning")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_sync_plan)
 
     p = sub.add_parser("cache-info", help="show HTTP cache location and size")
     p.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
