@@ -58,6 +58,17 @@ def add_cache_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--refresh-cache", action="store_true", help="bypass cached HTTP responses and refresh them")
 
 
+def sync_incremental_enabled(args: argparse.Namespace) -> bool:
+    return args.incremental or (args.all and not args.force)
+
+
+def selected_releases(args: argparse.Namespace) -> list[str]:
+    releases = args.release or ([] if not args.all else list_releases())
+    if not releases:
+        raise SystemExit("choose --all or at least one --release")
+    return releases
+
+
 def cmd_releases(args: argparse.Namespace) -> int:
     apply_cache_args(args)
     rows = []
@@ -84,17 +95,14 @@ def cmd_releases(args: argparse.Namespace) -> int:
 
 def cmd_sync(args: argparse.Namespace) -> int:
     apply_cache_args(args)
-    incremental = args.incremental or (args.all and not args.force)
+    incremental = sync_incremental_enabled(args)
     workers = getattr(args, "workers", DEFAULT_WORKERS)
     conn = connect_db(args.db)
     try:
         raw_dir = None if args.no_raw else args.raw_dir
         synced = []
         skipped = []
-        releases = args.release or ([] if not args.all else list_releases())
-        if not releases:
-            raise SystemExit("choose --all or at least one --release")
-        for release in releases:
+        for release in selected_releases(args):
             plan = plan_release(release, include_html_fallback=True, workers=workers)
             if plan.source_kind == "empty":
                 skipped.append({"release": release, "reason": "no_source"})
@@ -143,15 +151,12 @@ def cmd_cache_info(args: argparse.Namespace) -> int:
 
 def cmd_sync_plan(args: argparse.Namespace) -> int:
     apply_cache_args(args)
-    incremental = args.incremental or (args.all and not args.force)
+    incremental = sync_incremental_enabled(args)
     workers = getattr(args, "workers", DEFAULT_WORKERS)
     conn = connect_db(args.db)
     try:
-        releases = args.release or ([] if not args.all else list_releases())
-        if not releases:
-            raise SystemExit("choose --all or at least one --release")
         rows = []
-        for release in releases:
+        for release in selected_releases(args):
             plan = plan_release(release, include_html_fallback=True, workers=workers)
             rows.append(
                 summarize_release_sync(

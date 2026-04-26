@@ -71,6 +71,21 @@ def load_cached_bytes(url: str, cache_dir: Path | None = None) -> bytes | None:
     return cache_path.read_bytes()
 
 
+def cached_at_for_path(cache_path: Path) -> str | None:
+    meta_path = meta_path_for_cache(cache_path)
+    if not meta_path.exists():
+        return None
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    cached_at = meta.get("cached_at")
+    if isinstance(cached_at, str) and cached_at:
+        return cached_at
+    return None
+
+
+def cache_data_paths(cache_dir: Path) -> list[Path]:
+    return [path for path in cache_dir.rglob("*") if path.is_file() and not path.name.endswith(".meta.json")]
+
+
 def cache_entry_for_url(url: str, cache_dir: Path | None = None) -> dict[str, int | str] | None:
     cache_path = cache_path_for_url(url, cache_dir=cache_dir)
     if not cache_path.exists():
@@ -81,12 +96,9 @@ def cache_entry_for_url(url: str, cache_dir: Path | None = None) -> dict[str, in
         "bytes": cache_path.stat().st_size,
         "suffix": cache_path.suffix,
     }
-    meta_path = meta_path_for_cache(cache_path)
-    if meta_path.exists():
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        cached_at = meta.get("cached_at")
-        if isinstance(cached_at, str) and cached_at:
-            payload["cached_at"] = cached_at
+    cached_at = cached_at_for_path(cache_path)
+    if cached_at:
+        payload["cached_at"] = cached_at
     return payload
 
 
@@ -136,18 +148,14 @@ def cache_stats(cache_dir: Path | None = None) -> dict[str, int | str]:
             "oldest_cached_at": None,
             "newest_cached_at": None,
         }
-    paths = [path for path in cache_dir.rglob("*") if path.is_file() and not path.name.endswith(".meta.json")]
+    paths = cache_data_paths(cache_dir)
     suffix_counts: dict[str, int] = {}
     cached_at_values: list[str] = []
     for path in paths:
         suffix = path.suffix or ".bin"
         suffix_counts[suffix] = suffix_counts.get(suffix, 0) + 1
-        meta_path = meta_path_for_cache(path)
-        if not meta_path.exists():
-            continue
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        cached_at = meta.get("cached_at")
-        if isinstance(cached_at, str) and cached_at:
+        cached_at = cached_at_for_path(path)
+        if cached_at:
             cached_at_values.append(cached_at)
     return {
         "cache_dir": str(cache_dir),

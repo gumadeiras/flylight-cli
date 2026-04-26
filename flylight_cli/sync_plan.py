@@ -8,7 +8,7 @@ from .cache import cache_entry_for_url
 from .core import ReleasePlan, release_summary_url, s3_url_for_key
 
 
-def get_cached_inputs(plan: ReleasePlan, cache_dir: Path) -> list[dict[str, Any]]:
+def plan_input_urls(plan: ReleasePlan) -> list[str]:
     urls: list[str] = []
     if plan.manifest_object is not None:
         urls.append(s3_url_for_key(plan.manifest_object["key"]))
@@ -16,20 +16,47 @@ def get_cached_inputs(plan: ReleasePlan, cache_dir: Path) -> list[dict[str, Any]
         urls.extend(s3_url_for_key(item["key"]) for item in plan.metadata_objects)
     if plan.html_summary is not None:
         urls.append(release_summary_url(plan.release))
+    return urls
 
+
+def get_cached_inputs(plan: ReleasePlan, cache_dir: Path) -> list[dict[str, Any]]:
     inputs = []
-    for url in urls:
+    for url in plan_input_urls(plan):
         entry = cache_entry_for_url(url, cache_dir=cache_dir)
+        cached_at = entry["cached_at"] if entry and "cached_at" in entry else None
+        bytes_count = entry["bytes"] if entry is not None else None
+        suffix = entry["suffix"] if entry is not None else Path(url).suffix or ".bin"
         inputs.append(
             {
                 "url": url,
                 "cached": entry is not None,
-                "bytes": entry["bytes"] if entry else None,
-                "cached_at": entry["cached_at"] if entry and "cached_at" in entry else None,
-                "suffix": entry["suffix"] if entry else Path(url).suffix or ".bin",
+                "bytes": bytes_count,
+                "cached_at": cached_at,
+                "suffix": suffix,
             }
         )
     return inputs
+
+
+def sync_action(plan: ReleasePlan, incremental: bool, token_matches: bool, has_row: bool) -> tuple[str, str]:
+    if plan.source_kind == "empty":
+        return "skip", "no_source"
+    if incremental and token_matches:
+        return "skip", "up_to_date"
+    return "sync", "stale" if has_row else "not_synced"
+
+
+def db_state(row: sqlite3.Row | None) -> dict[str, Any]:
+    record = dict(row) if row is not None else None
+    return {
+        "present": record is not None,
+        "synced_at": record["synced_at"] if record else None,
+        "source_kind": record["source_kind"] if record else None,
+        "source_locator": record["source_locator"] if record else None,
+        "line_count": record["line_count"] if record else None,
+        "image_count": record["image_count"] if record else None,
+        "source_token": record["source_token"] if record else None,
+    }
 
 
 def summarize_release_sync(
@@ -47,20 +74,13 @@ def summarize_release_sync(
         (plan.release,),
     ).fetchone()
 
+    db = db_state(row)
     cached_inputs = get_cached_inputs(plan, cache_dir)
     cached_count = sum(1 for item in cached_inputs if item["cached"])
     total_inputs = len(cached_inputs)
-    token_matches = row is not None and row["source_token"] == plan.source_token
-
-    if plan.source_kind == "empty":
-        action = "skip"
-        reason = "no_source"
-    elif incremental and token_matches:
-        action = "skip"
-        reason = "up_to_date"
-    else:
-        action = "sync"
-        reason = "not_synced" if row is None else "stale"
+    has_row = bool(db["present"])
+    token_matches = db["source_token"] == plan.source_token
+    action, reason = sync_action(plan, incremental=incremental, token_matches=token_matches, has_row=has_row)
 
     return {
         "release": plan.release,
@@ -82,12 +102,7 @@ def summarize_release_sync(
             "html_lines": len(plan.html_summary or {}),
         },
         "db": {
-            "present": row is not None,
+            **db,
             "source_token_match": bool(token_matches),
-            "synced_at": row["synced_at"] if row else None,
-            "source_kind": row["source_kind"] if row else None,
-            "source_locator": row["source_locator"] if row else None,
-            "line_count": row["line_count"] if row else None,
-            "image_count": row["image_count"] if row else None,
         },
     }
