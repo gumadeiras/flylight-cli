@@ -57,6 +57,17 @@ class FlylightCliTests(unittest.TestCase):
         self.assertIn("31B08-p65ADZp", rows["SS00724"]["ad_text"])
         self.assertIn("24A03-ZpGdbd", rows["SS00724"]["dbd_text"])
 
+    def test_parse_release_catalog_html(self) -> None:
+        html = """
+        <a href="https://splitgal4.janelia.org/cgi-bin/splitgal4_summary.cgi?_gsearch=Search&alps_release=MB+Paper+2014">View lines</a>
+        <a href='https://splitgal4.janelia.org/cgi-bin/splitgal4_summary.cgi?_gsearch=Search&alps_release=Rubin+%26+Aso+2023'>View lines</a>
+        <a href='https://splitgal4.janelia.org/cgi-bin/splitgal4_summary.cgi?_gsearch=Search&amp;alps_release=MB+Paper+2014'>View lines</a>
+        """
+        self.assertEqual(
+            core.parse_release_catalog_html(html),
+            ["MB Paper 2014", "Rubin & Aso 2023"],
+        )
+
     def test_schema_command(self) -> None:
         all_args = argparse.Namespace(entity=None, json=True)
         with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
@@ -88,26 +99,17 @@ class FlylightCliTests(unittest.TestCase):
         self.assertIn("flylight schema --entity line", topic_payload["schema-introspection"]["commands"])
 
     def test_list_releases_uses_cache_offline(self) -> None:
-        root_xml = b"""<?xml version="1.0" encoding="UTF-8"?>
-<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-  <Name>janelia-flylight-imagery</Name>
-  <Prefix></Prefix>
-  <Marker></Marker>
-  <MaxKeys>1000</MaxKeys>
-  <Delimiter>/</Delimiter>
-  <IsTruncated>false</IsTruncated>
-  <CommonPrefixes><Prefix>MB Paper 2014/</Prefix></CommonPrefixes>
-  <CommonPrefixes><Prefix>Descending Neurons 2018/</Prefix></CommonPrefixes>
-  <CommonPrefixes><Prefix>content/</Prefix></CommonPrefixes>
-</ListBucketResult>
+        html = b"""
+<a href="https://splitgal4.janelia.org/cgi-bin/splitgal4_summary.cgi?_gsearch=Search&alps_release=MB+Paper+2014">View lines</a>
+<a href='https://splitgal4.janelia.org/cgi-bin/splitgal4_summary.cgi?_gsearch=Search&alps_release=Descending+Neurons+2018'>View lines</a>
 """
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_dir = Path(tmpdir) / "http-cache"
             cache.set_cache_options(cache_dir=cache_dir, offline=False, refresh=False)
             try:
-                with mock.patch("flylight_cli.cache.urlopen", return_value=mock_http_response(root_xml)):
+                with mock.patch("flylight_cli.cache.urlopen", return_value=mock_http_response(html)):
                     releases = core.list_releases()
-                self.assertEqual(releases, ["Descending Neurons 2018", "MB Paper 2014"])
+                self.assertEqual(releases, ["MB Paper 2014", "Descending Neurons 2018"])
 
                 cache.set_cache_options(cache_dir=cache_dir, offline=True, refresh=False)
                 with mock.patch("flylight_cli.cache.urlopen", side_effect=AssertionError("network should not be used")):

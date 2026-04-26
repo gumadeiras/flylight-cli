@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -102,24 +104,35 @@ def cache_entry_for_url(url: str, cache_dir: Path | None = None) -> dict[str, in
     return payload
 
 
+def write_atomic_bytes(path: Path, payload: bytes) -> None:
+    ensure_cache_parent(path)
+    fd, tmp_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f"{path.name}.",
+        suffix=".tmp",
+    )
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(payload)
+        Path(tmp_name).replace(path)
+    except Exception:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+
+
 def write_cached_bytes(url: str, payload: bytes, cache_dir: Path | None = None) -> Path:
     cache_path = cache_path_for_url(url, cache_dir=cache_dir)
-    ensure_cache_parent(cache_path)
-    tmp_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
-    tmp_path.write_bytes(payload)
-    tmp_path.replace(cache_path)
-    meta_path_for_cache(cache_path).write_text(
-        json.dumps(
-            {
-                "url": url,
-                "cached_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
-                "bytes": len(payload),
-            },
-            indent=2,
-            sort_keys=True,
-        ),
-        encoding="utf-8",
+    write_atomic_bytes(cache_path, payload)
+    meta_payload = json.dumps(
+        {
+            "url": url,
+            "cached_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            "bytes": len(payload),
+        },
+        indent=2,
+        sort_keys=True,
     )
+    write_atomic_bytes(meta_path_for_cache(cache_path), meta_payload.encode("utf-8"))
     return cache_path
 
 

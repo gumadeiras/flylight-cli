@@ -5,6 +5,7 @@ import io
 import json
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest import mock
 
@@ -21,6 +22,21 @@ def load_json_fixture(name: str):
 
 
 class SyncPlanTests(unittest.TestCase):
+    def test_write_cached_bytes_is_safe_for_concurrent_same_url_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir) / "http-cache"
+            url = "https://example.org/manifest.json"
+            payloads = [f'{{"worker": {idx}}}'.encode("utf-8") for idx in range(12)]
+
+            with ThreadPoolExecutor(max_workers=6) as executor:
+                paths = list(executor.map(lambda payload: cache.write_cached_bytes(url, payload, cache_dir=cache_dir), payloads))
+
+            self.assertTrue(all(path == paths[0] for path in paths))
+            self.assertIn(paths[0].read_bytes(), payloads)
+            meta = json.loads(cache.meta_path_for_cache(paths[0]).read_text(encoding="utf-8"))
+            self.assertEqual(meta["url"], url)
+            self.assertIn(meta["bytes"], {len(payload) for payload in payloads})
+
     def test_cache_info_reports_suffix_counts_and_timestamps(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_dir = Path(tmpdir) / "http-cache"

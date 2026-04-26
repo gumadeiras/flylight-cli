@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from html import unescape
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, unquote_plus, urlencode
 import xml.etree.ElementTree as ET
 
 from .cache import DEFAULT_CACHE_DIR, OfflineCacheMiss, fetch_bytes as cached_fetch_bytes
@@ -23,6 +23,7 @@ from .records import asset_urls_from_image, get_db_stats, get_image_record, get_
 BUCKET = "janelia-flylight-imagery"
 S3_HTTP_ROOT = f"https://s3.amazonaws.com/{BUCKET}"
 S3_LIST_ROOT = f"{S3_HTTP_ROOT}/"
+SPLITGAL4_INDEX_URL = "https://splitgal4.janelia.org/cgi-bin/splitgal4.cgi"
 SPLITGAL4_SUMMARY_URL = "https://splitgal4.janelia.org/cgi-bin/splitgal4_summary.cgi"
 NS = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
 USER_AGENT = "flylight-cli/0.11"
@@ -109,8 +110,22 @@ def s3_list_all(prefix: str = "", delimiter: str | None = None) -> tuple[list[di
 
 
 def list_releases() -> list[str]:
-    _, prefixes = s3_list_all(delimiter="/")
-    return sorted(prefix.rstrip("/") for prefix in prefixes if prefix.rstrip("/") != "content")
+    return parse_release_catalog_html(fetch_text(SPLITGAL4_INDEX_URL))
+
+
+def parse_release_catalog_html(html: str) -> list[str]:
+    releases = []
+    seen = set()
+    pattern = re.compile(r"splitgal4_summary\.cgi\?_gsearch=Search&amp;alps_release=([^\"']+)|splitgal4_summary\.cgi\?_gsearch=Search&alps_release=([^\"']+)")
+    for encoded_left, encoded_right in pattern.findall(html):
+        encoded = encoded_left or encoded_right
+        release = unquote_plus(unescape(encoded))
+        release = release.strip()
+        if not release or release in seen:
+            continue
+        seen.add(release)
+        releases.append(release)
+    return releases
 
 
 def find_release_manifest_object(release: str) -> dict[str, str] | None:
