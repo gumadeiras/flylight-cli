@@ -32,6 +32,14 @@ def mock_http_response(payload: bytes) -> mock.MagicMock:
 
 
 class FlylightCliTests(unittest.TestCase):
+    def test_version_flag(self) -> None:
+        parser = cli.build_parser()
+        with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            with self.assertRaises(SystemExit) as exc:
+                parser.parse_args(["--version"])
+        self.assertEqual(exc.exception.code, 0)
+        self.assertIn("0.12.1", stdout.getvalue())
+
     def test_normalize_helpers_expand_agent_friendly_fields(self) -> None:
         normalized = core.normalize_line_record(
             {

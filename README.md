@@ -22,6 +22,14 @@ Install:
 pip install -e .
 ```
 
+Homebrew:
+
+```bash
+brew tap gumadeiras/tap
+brew install flylight-cli
+flylight --version
+```
+
 Entry:
 
 ```bash

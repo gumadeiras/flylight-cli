@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any, TextIO
 
+from . import __version__
 from .cache import DEFAULT_CACHE_DIR, OfflineCacheMiss, cache_stats, set_cache_options
 from .core import (
     DEFAULT_DB,
@@ -556,6 +557,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Index/query Janelia FlyLight Split-GAL4 data from S3 + CGI fallback surfaces."
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("releases", help="list releases and source types")
