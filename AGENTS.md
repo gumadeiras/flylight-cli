@@ -51,6 +51,21 @@ Best query surfaces:
 - line diff: `flylight compare-line MB005B`
 - release diff: `flylight compare-release 'MB Paper 2014' 'MB Paper 2015'`
 
+Example: find EPG lines, then get expression images
+- exact EM-tagged lines: `flylight search --em-cell-type EPG`
+- fuzzy family search: `flylight search-text 'EPG OR E-PG OR ellipsoid'`
+- line detail with embedded images: `flylight show-line SS00090`
+- pull image-level matches: `flylight search-images --em-cell-type EPG`
+- extract representative 20x/63x PNG urls:
+```bash
+flylight show-line SS00090 \
+  | jq -r '.releases[] | .images[] | select((.em_cell_types // []) | index("EPG")) | .asset_urls[] | select(test("signals_mip\\.png$"))'
+```
+- current exact `EPG` lines in full synced db: `SS00090`, `SS00098`
+- representative 63x examples:
+  - `https://s3.amazonaws.com/janelia-flylight-imagery/Wolff+et+al+2024/SS00090/SS00090-20130426_20_C2-f-63x-central-Split_GAL4-signals_mip.png`
+  - `https://s3.amazonaws.com/janelia-flylight-imagery/Wolff+et+al+2024/SS00098/SS00098-20130419_31_B4-f-63x-brain-Split_GAL4-signals_mip.png`
+
 Best agent export surfaces:
 - lines: `flylight export-ndjson --entity line --release 'Descending Neurons 2018'`
 - images: `flylight export-ndjson --entity image --term MB005B`
