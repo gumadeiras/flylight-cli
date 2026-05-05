@@ -16,10 +16,16 @@ Source order:
 
 ## CLI
 
-Install:
+PyPI with `pipx`:
 
 ```bash
-pip install -e .
+pipx install flylight-cli
+```
+
+PyPI with plain `pip`:
+
+```bash
+python3 -m pip install flylight-cli
 ```
 
 Homebrew:
@@ -28,6 +34,12 @@ Homebrew:
 brew tap gumadeiras/tap
 brew install flylight-cli
 flylight --version
+```
+
+From source:
+
+```bash
+python3 -m pip install -e .
 ```
 
 Entry:
