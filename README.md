@@ -1,4 +1,4 @@
-# flylight-cli
+# flylight
 
 Agent-friendly local index for Janelia FlyLight Split-GAL4 resources.
 
@@ -19,20 +19,20 @@ Source order:
 PyPI with `pipx`:
 
 ```bash
-pipx install flylight-cli
+pipx install flylight
 ```
 
 PyPI with plain `pip`:
 
 ```bash
-python3 -m pip install flylight-cli
+python3 -m pip install flylight
 ```
 
 Homebrew:
 
 ```bash
 brew tap gumadeiras/tap
-brew install flylight-cli
+brew install flylight
 flylight --version
 ```
 

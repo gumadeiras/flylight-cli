@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "flylight-cli"
+name = "flylight"
 version = "0.12.2"
 description = "Agent-friendly local index for Janelia FlyLight Split-GAL4 resources"
 readme = "README.md"
