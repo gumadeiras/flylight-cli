@@ -4,6 +4,7 @@
 
 ### Changes
 
+- Added the final `flylight-cli` release notice. Install `flylight` now.
 - Updated release automation to the current GitHub Actions checkout, Python setup, and release actions.
 - Added a local release wrapper for version sync, package validation, tagging, and release workflow verification.
 

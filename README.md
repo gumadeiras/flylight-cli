@@ -1,5 +1,8 @@
 # flylight-cli
 
+> This package has been renamed. Install `flylight` now:
+> `pipx install flylight`
+
 Agent-friendly local index for Janelia FlyLight Split-GAL4 resources.
 
 Surfaces used:
