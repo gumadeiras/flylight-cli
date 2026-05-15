@@ -38,7 +38,7 @@ class FlylightCliTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as exc:
                 parser.parse_args(["--version"])
         self.assertEqual(exc.exception.code, 0)
-        self.assertIn("0.12.2", stdout.getvalue())
+        self.assertIn("0.12.4", stdout.getvalue())
 
     def test_normalize_helpers_expand_agent_friendly_fields(self) -> None:
         normalized = core.normalize_line_record(
