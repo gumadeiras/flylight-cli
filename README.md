@@ -1,10 +1,11 @@
 # flylight
 
-Agent-friendly local index for Janelia FlyLight Split-GAL4 resources.
+Agent-friendly local index for Janelia FlyLight Split-GAL4 and GAL4/LexA resources.
 
 Surfaces used:
 
 - CGI site: [splitgal4.janelia.org](https://splitgal4.janelia.org/cgi-bin/splitgal4.cgi)
+- GAL4/LexA CGI site: [flweb.janelia.org](https://flweb.janelia.org/cgi-bin/flew.cgi)
 - Public bucket: [janelia-flylight-imagery](https://s3.amazonaws.com/janelia-flylight-imagery/)
 - Bucket docs: [README.md](https://s3.amazonaws.com/janelia-flylight-imagery/README.md)
 
@@ -13,6 +14,7 @@ Source order:
 1. release manifest json
 2. per-line/per-image S3 metadata json
 3. CGI release summary html
+4. GAL4/LexA line catalog + per-line imagery html
 
 ## CLI
 
@@ -44,7 +46,7 @@ python3 -m pip install -e .
 
 ## Release
 
-Current release: `v0.12.2`.
+Current release: `v0.12.4`.
 
 Tag pushes like `vX.Y.Z` run the release workflow: build artifacts, create a
 GitHub release, publish to PyPI, and update `gumadeiras/homebrew-tap`.
@@ -62,26 +64,45 @@ flylight --help
 python3 janelia_splitgal4.py
 ```
 
+Common commands:
+
+```bash
+flylight update --all
+flylight sources --json
+flylight find DNp04
+flylight images MB005B
+flylight line SS00724
+flylight image 6878306
+flylight release 'MB Paper 2014'
+flylight examples --topic quick-start
+```
+
 Examples:
 
 ```bash
-flylight releases
+flylight update --all
+flylight sources --json
+flylight find R10A --source-kind flew-html
+flylight images R10A01 --source-kind flew-html
+flylight releases --json
 flylight sync --release 'MB Paper 2014'
 flylight sync --all
+flylight sync --release 'FlyLight GAL4/LexA Collection'
 flylight sync --all --force
 flylight sync --all --offline
 flylight sync --all --refresh-cache
 flylight sync --release 'Descending Neurons 2018' --workers 8
 flylight sync-plan --all
 flylight sync-plan --release 'MB Paper 2014' --offline
-flylight reindex
-flylight cache-info
+flylight reindex --json
+flylight cache-info --json
 flylight schema --entity line
 flylight examples --topic release-diff
 flylight snapshot-export --out data/flylight-snapshot.tar.gz
 flylight snapshot-import data/flylight-snapshot.tar.gz --force
 flylight search --expressed-in DNp04 --ad 31B08 --source-kind line-metadata
 flylight search --em-cell-type EPG
+flylight search --source-kind flew-html --line R10A
 flylight search-text 'DNp04 AND 31B08'
 flylight search-images --area Brain --objective 20x --robot-id 3007645
 flylight search-images --em-cell-type EPG
@@ -90,7 +111,7 @@ flylight show-image 6878306
 flylight compare-line MB005B
 flylight compare-release 'MB Paper 2014' 'MB Paper 2015'
 flylight show-release 'MB Paper 2014' --include-lines --genotype 34A03
-flylight stats
+flylight stats --json
 flylight export-ndjson --entity line --release 'Descending Neurons 2018'
 flylight export-ndjson --entity image --term MB005B --out data/mb005b.ndjson
 flylight export-ndjson --entity release
@@ -103,6 +124,9 @@ flylight export-ndjson --entity compare-release --left-release 'MB Paper 2014' -
 - HTTP fetches are cache-first by default; cached responses are reused until you pass `--refresh-cache`.
 - `--offline` disables network access and uses cached HTTP responses only.
 - cache path: `data/http_cache`
+- bare `flylight` prints the main help menu; bare subcommands print command-specific help.
+- `update` is the simple all-source sync shortcut and requires explicit `--all`.
+- `sync` and `update` report planning, skip, and sync progress to stderr; JSON output stays on stdout.
 - `sync-plan` is a dry-run: source kind, cache coverage, db coverage, skip vs sync decision.
 - `reindex` rebuilds derived searchable fields from stored raw image payloads; use it after schema upgrades on an existing db.
 - `snapshot-export` bundles sqlite + raw manifests + HTTP cache for portable offline reuse.
@@ -113,6 +137,8 @@ flylight export-ndjson --entity compare-release --left-release 'MB Paper 2014' -
 - `cache-info` also reports cache suffix counts and oldest/newest cached timestamps.
 - missing release manifest: fallback walks line dirs + metadata jsons.
 - CGI summary enriches line-level fields like expressed-in, genotype, AD, DBD.
+- the GAL4/LexA catalog syncs as `FlyLight GAL4/LexA Collection` with `source_kind=flew-html`; it indexes line names from `flew.cgi` plus per-line imagery metadata from `view_flew_imagery.cgi`.
+- GAL4/LexA incremental sync tokens include the catalog and cached per-line imagery pages; missing page cache forces a conservative resync.
 - line/image exports include normalized arrays alongside text fields.
 - line/image records now include normalized `em_cell_types` derived from raw `em_cell_type` metadata when present.
 - `search` supports field filters over line metadata: AD, DBD, genotype, expressed-in, robot-id, source-kind.

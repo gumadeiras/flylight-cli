@@ -13,18 +13,20 @@
 Scope: this repo.
 
 Purpose:
-- sync, cache, query, diff Janelia FlyLight Split-GAL4 data
+- sync, cache, query, diff Janelia FlyLight Split-GAL4 and GAL4/LexA data
 - prefer local/offline data once warmed
 - emit NDJSON for agent consumption
 
 Use:
 - install: `pip install -e .`
 - entrypoint: `flylight`
+- easy path: `flylight update --all`, `flylight find <query>`, `flylight images <query>`, `flylight line <line>`
 
 Fetch order:
 1. release manifest json
 2. per-line/per-image S3 metadata json
 3. CGI release summary html
+4. GAL4/LexA line catalog + per-line imagery html
 
 Default paths:
 - sqlite db: `data/janelia_splitgal4.sqlite`
@@ -40,8 +42,10 @@ Cache/offline:
 - rebuild derived fields: `flylight reindex`
 
 Warm data:
+- default: `flylight update --all`
 - one release: `flylight sync --release 'MB Paper 2014'`
 - all releases: `flylight sync --all`
+- GAL4/LexA catalog: `flylight sync --release 'FlyLight GAL4/LexA Collection'`
 - inspect sync coverage first: `flylight sync-plan --all`
 - refresh cache while syncing: `flylight sync --all --refresh-cache`
 - offline sync from warmed cache: `flylight sync --all --offline`
@@ -51,7 +55,10 @@ Portable offline bundle:
 - import snapshot: `flylight snapshot-import data/flylight-snapshot.tar.gz --force`
 
 Best query surfaces:
+- simple line search: `flylight find DNp04`
+- simple image search: `flylight images MB005B`
 - line filters: `flylight search ...`
+- GAL4/LexA line filters: `flylight search --source-kind flew-html --line R10A`
 - EM term filter: `flylight search --em-cell-type EPG`
 - full-text line search: `flylight search-text 'DNp04 AND 31B08'`
 - image filters: `flylight search-images ...`

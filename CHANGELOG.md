@@ -4,6 +4,10 @@
 
 ### Changes
 
+- Added the FlyLight GAL4/LexA catalog and per-line imagery metadata from `flew.cgi` as a syncable `flew-html` source with page-aware incremental tokens.
+- Added simpler `update`, `sources`, `find`, `images`, `line`, `image`, and `release` commands plus expanded examples.
+- Made bare `flylight` print the main help menu and bare subcommands print command-specific help; `update` now requires explicit `--all`.
+- Added stderr progress reporting for long `sync` and `update` runs without changing JSON stdout.
 - Renamed the published PyPI and Homebrew package to `flylight`.
 - Updated release automation to the current GitHub Actions checkout, Python setup, and release actions.
 - Added a local release wrapper for version sync, package validation, tagging, and release workflow verification.
