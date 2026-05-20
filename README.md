@@ -46,7 +46,7 @@ python3 -m pip install -e .
 
 ## Release
 
-Current release: `v0.12.4`.
+Current release: `v0.12.5`.
 
 Tag pushes like `vX.Y.Z` run the release workflow: build artifacts, create a
 GitHub release, publish to PyPI, and update `gumadeiras/homebrew-tap`.
