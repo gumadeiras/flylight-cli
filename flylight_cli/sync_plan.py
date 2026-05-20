@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .cache import cache_entry_for_url
-from .core import ReleasePlan, release_summary_url, s3_url_for_key
+from .core import FLEW_INDEX_URL, ReleasePlan, flew_imagery_url, release_summary_url, s3_url_for_key
 
 
 def plan_input_urls(plan: ReleasePlan) -> list[str]:
@@ -16,6 +16,9 @@ def plan_input_urls(plan: ReleasePlan) -> list[str]:
         urls.extend(s3_url_for_key(item["key"]) for item in plan.metadata_objects)
     if plan.html_summary is not None:
         urls.append(release_summary_url(plan.release))
+    if plan.flew_lines is not None:
+        urls.append(FLEW_INDEX_URL)
+        urls.extend(flew_imagery_url(line) for line in plan.flew_lines)
     return urls
 
 
@@ -100,6 +103,7 @@ def summarize_release_sync(
             "line_prefixes": len(plan.line_prefixes or []),
             "metadata_objects": len(plan.metadata_objects or []),
             "html_lines": len(plan.html_summary or {}),
+            "flew_lines": len(plan.flew_lines or []),
         },
         "db": {
             **db,

@@ -12,11 +12,18 @@ def asset_urls_from_image(release: str, line: str, payload: dict[str, Any]) -> l
     from .core import s3_url_for_key
 
     urls = []
-    for value in payload.values():
+    values: list[Any] = list(payload.values())
+    for value in values:
+        if isinstance(value, dict):
+            values.extend(value.values())
+            continue
+        if isinstance(value, list):
+            values.extend(value)
+            continue
         if not isinstance(value, str):
             continue
         lower = value.lower()
-        if lower.endswith((".png", ".mp4", ".h5j", ".lsm", ".lsm.bz2", ".json")):
+        if lower.endswith((".png", ".jpg", ".jpeg", ".mp4", ".h5j", ".lsm", ".lsm.bz2", ".json")):
             if value.startswith(("http://", "https://")):
                 urls.append(value)
             else:

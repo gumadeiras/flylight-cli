@@ -12,6 +12,7 @@ from unittest import mock
 from flylight_cli import cache
 from flylight_cli import cli
 from flylight_cli import core
+from flylight_cli import sync_plan
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -114,6 +115,23 @@ class SyncPlanTests(unittest.TestCase):
             self.assertEqual(row["source_cache_ready"], True)
             self.assertEqual(row["db"]["source_token_match"], True)
             conn.close()
+
+    def test_flew_sync_plan_inputs_include_catalog_and_line_pages(self) -> None:
+        plan = core.ReleasePlan(
+            release=core.FLEW_RELEASE,
+            source_kind="flew-html",
+            source_locator=core.FLEW_INDEX_URL,
+            source_token="flew-token",
+            flew_lines=["R10A01", "R10A02"],
+        )
+        self.assertEqual(
+            sync_plan.plan_input_urls(plan),
+            [
+                core.FLEW_INDEX_URL,
+                core.flew_imagery_url("R10A01"),
+                core.flew_imagery_url("R10A02"),
+            ],
+        )
 
 
 if __name__ == "__main__":

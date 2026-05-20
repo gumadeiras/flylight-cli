@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "flylight"
 version = "0.12.4"
-description = "Agent-friendly local index for Janelia FlyLight Split-GAL4 resources"
+description = "Agent-friendly local index for Janelia FlyLight Split-GAL4 and GAL4/LexA resources"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
