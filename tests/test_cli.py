@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from flylight_cli import __version__
 from flylight_cli import cache
 from flylight_cli import cli
 from flylight_cli import core
@@ -38,7 +39,7 @@ class FlylightCliTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as exc:
                 parser.parse_args(["--version"])
         self.assertEqual(exc.exception.code, 0)
-        self.assertIn("0.12.4", stdout.getvalue())
+        self.assertIn(__version__, stdout.getvalue())
 
     def test_normalize_helpers_expand_agent_friendly_fields(self) -> None:
         normalized = core.normalize_line_record(
