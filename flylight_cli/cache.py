@@ -10,8 +10,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from .paths import default_cache_dir
 
-DEFAULT_CACHE_DIR = Path("data/http_cache")
+
+DEFAULT_CACHE_DIR = default_cache_dir()
 
 
 @dataclass

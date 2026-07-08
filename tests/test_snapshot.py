@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -80,6 +81,55 @@ class SnapshotTests(unittest.TestCase):
             self.assertEqual(imported_cache_stats["entries"], 1)
             restored_conn.close()
             conn.close()
+
+    def test_snapshot_import_rejects_path_traversal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            archive_path = Path(tmpdir) / "bad-snapshot.tar.gz"
+            payload = b"bad"
+            with tarfile.open(archive_path, "w:gz") as tar:
+                info = tarfile.TarInfo("raw_manifests/../../escape.txt")
+                info.size = len(payload)
+                tar.addfile(info, io.BytesIO(payload))
+
+            args = argparse.Namespace(
+                archive=archive_path,
+                db=Path(tmpdir) / "data.sqlite",
+                raw_dir=Path(tmpdir) / "raw",
+                cache_dir=Path(tmpdir) / "cache",
+                force=False,
+                json=True,
+            )
+            with self.assertRaises(SystemExit) as raised:
+                cli.cmd_snapshot_import(args)
+
+            self.assertIn("unsafe snapshot path", str(raised.exception))
+            self.assertFalse((Path(tmpdir) / "escape.txt").exists())
+
+    def test_snapshot_import_rejects_empty_member_paths(self) -> None:
+        for member_name in ["raw_manifests/", "http_cache/"]:
+            with self.subTest(member_name=member_name):
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    archive_path = Path(tmpdir) / "bad-snapshot.tar.gz"
+                    payload = b"bad"
+                    with tarfile.open(archive_path, "w:gz") as tar:
+                        info = tarfile.TarInfo(member_name)
+                        info.size = len(payload)
+                        tar.addfile(info, io.BytesIO(payload))
+
+                    args = argparse.Namespace(
+                        archive=archive_path,
+                        db=Path(tmpdir) / "data.sqlite",
+                        raw_dir=Path(tmpdir) / "raw",
+                        cache_dir=Path(tmpdir) / "cache",
+                        force=False,
+                        json=True,
+                    )
+                    with self.assertRaises(SystemExit) as raised:
+                        cli.cmd_snapshot_import(args)
+
+                    self.assertIn("unsafe snapshot path", str(raised.exception))
+                    self.assertFalse(args.raw_dir.exists())
+                    self.assertFalse(args.cache_dir.exists())
 
 
 if __name__ == "__main__":

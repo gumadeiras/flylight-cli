@@ -15,7 +15,7 @@ from urllib.parse import quote, unquote_plus, urlencode
 import xml.etree.ElementTree as ET
 
 from . import __version__
-from .cache import DEFAULT_CACHE_DIR, OfflineCacheMiss, fetch_bytes as cached_fetch_bytes
+from .cache import OfflineCacheMiss, fetch_bytes as cached_fetch_bytes
 from .db import connect_db, ensure_parent, refresh_release_fts
 from .flew import (
     FLEW_INDEX_URL,
@@ -26,6 +26,7 @@ from .flew import (
     parse_flew_line_html,
 )
 from .normalize import extract_em_cell_type_terms, normalize_image_record, normalize_line_record, normalize_release_record
+from .paths import default_data_dir
 from .records import asset_urls_from_image, get_db_stats, get_image_record, get_image_records, get_line_record, get_release_record, get_release_records
 from .text_utils import md5_text, safe_slug, strip_html
 
@@ -37,8 +38,9 @@ SPLITGAL4_INDEX_URL = "https://splitgal4.janelia.org/cgi-bin/splitgal4.cgi"
 SPLITGAL4_SUMMARY_URL = "https://splitgal4.janelia.org/cgi-bin/splitgal4_summary.cgi"
 NS = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
 USER_AGENT = f"flylight/{__version__}"
-DEFAULT_DB = Path("data/janelia_splitgal4.sqlite")
-DEFAULT_RAW_DIR = Path("data/raw_manifests")
+DEFAULT_DATA_DIR = default_data_dir()
+DEFAULT_DB = DEFAULT_DATA_DIR / "janelia_splitgal4.sqlite"
+DEFAULT_RAW_DIR = DEFAULT_DATA_DIR / "raw_manifests"
 DEFAULT_WORKERS = 12
 ProgressCallback = Callable[[str], None]
 

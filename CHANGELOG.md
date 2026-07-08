@@ -2,8 +2,13 @@
 
 ## Unreleased
 
+### Fixes
+
+- Hardened snapshot import against unsafe archive paths.
+
 ### Changes
 
+- Changed default storage from cwd-relative `data/...` paths to OS cache/data directories.
 - Added the FlyLight GAL4/LexA catalog and per-line imagery metadata from `flew.cgi` as a syncable `flew-html` source with page-aware incremental tokens.
 - Added simpler `update`, `sources`, `find`, `images`, `line`, `image`, and `release` commands plus expanded examples.
 - Made bare `flylight` print the main help menu and bare subcommands print command-specific help; `update` now requires explicit `--all`.

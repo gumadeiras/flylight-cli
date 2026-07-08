@@ -123,7 +123,8 @@ flylight export-ndjson --entity compare-release --left-release 'MB Paper 2014' -
 
 - HTTP fetches are cache-first by default; cached responses are reused until you pass `--refresh-cache`.
 - `--offline` disables network access and uses cached HTTP responses only.
-- cache path: `data/http_cache`
+- cache path: OS cache directory, e.g. `~/Library/Caches/flylight` on macOS, `$XDG_CACHE_HOME/flylight` or `~/.cache/flylight` on Linux, and `%LOCALAPPDATA%\flylight\Cache` on Windows
+- db/raw data path: OS data directory, e.g. `~/Library/Application Support/flylight` on macOS, `$XDG_DATA_HOME/flylight` or `~/.local/share/flylight` on Linux, and `%LOCALAPPDATA%\flylight` on Windows
 - bare `flylight` prints the main help menu; bare subcommands print command-specific help.
 - `update` is the simple all-source sync shortcut and requires explicit `--all`.
 - `sync` and `update` report planning, skip, and sync progress to stderr; JSON output stays on stdout.
@@ -148,5 +149,5 @@ flylight export-ndjson --entity compare-release --left-release 'MB Paper 2014' -
 - `compare-line` shows shared fields for the same line across synced releases.
 - `compare-release` summarizes added, removed, changed, and unchanged lines between two synced releases.
 - `export-ndjson` also supports `compare-line` and `compare-release` entities for agent ingest.
-- local db path: `data/janelia_splitgal4.sqlite`
-- raw manifest cache: `data/raw_manifests/*.json`
+- local db file: `janelia_splitgal4.sqlite` under the OS data directory
+- raw manifest cache: `raw_manifests/*.json` under the OS data directory

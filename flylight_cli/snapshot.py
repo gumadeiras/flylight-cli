@@ -4,7 +4,7 @@ import json
 import sqlite3
 import tarfile
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .cache import cache_stats
@@ -87,11 +87,11 @@ def import_snapshot(
                 imported["db"] = True
                 continue
             if member.name.startswith("raw_manifests/"):
-                _extract_member(tar, member, raw_dir / member.name.removeprefix("raw_manifests/"))
+                _extract_member(tar, member, _snapshot_member_target(raw_dir, member, "raw_manifests/"))
                 imported["raw_files"] += 1
                 continue
             if member.name.startswith("http_cache/"):
-                _extract_member(tar, member, cache_dir / member.name.removeprefix("http_cache/"))
+                _extract_member(tar, member, _snapshot_member_target(cache_dir, member, "http_cache/"))
                 imported["cache_files"] += 1
                 continue
 
@@ -111,6 +111,18 @@ def checkpoint_sqlite(db_path: Path) -> None:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     finally:
         conn.close()
+
+
+def _snapshot_member_target(root: Path, member: tarfile.TarInfo, prefix: str) -> Path:
+    relative = PurePosixPath(member.name.removeprefix(prefix))
+    if (
+        not relative.parts
+        or relative.is_absolute()
+        or any(part in {"", ".", ".."} for part in relative.parts)
+        or any("\\" in part or ":" in part for part in relative.parts)
+    ):
+        raise SystemExit(f"unsafe snapshot path: {member.name}")
+    return root.joinpath(*relative.parts)
 
 
 def _extract_member(tar: tarfile.TarFile, member: tarfile.TarInfo, target: Path) -> None:

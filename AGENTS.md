@@ -29,9 +29,9 @@ Fetch order:
 4. GAL4/LexA line catalog + per-line imagery html
 
 Default paths:
-- sqlite db: `data/janelia_splitgal4.sqlite`
-- HTTP cache: `data/http_cache`
-- raw manifests: `data/raw_manifests`
+- sqlite db: OS data directory, e.g. `~/Library/Application Support/flylight/janelia_splitgal4.sqlite` on macOS
+- HTTP cache: OS cache directory, e.g. `~/Library/Caches/flylight` on macOS
+- raw manifests: OS data directory, e.g. `~/Library/Application Support/flylight/raw_manifests` on macOS
 
 Cache/offline:
 - HTTP is cache-first by default
