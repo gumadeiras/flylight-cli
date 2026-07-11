@@ -46,7 +46,8 @@ python3 -m pip install -e .
 
 ## Release
 
-Current release: `v0.12.5`.
+Current releases: [GitHub](https://github.com/gumadeiras/flylight-cli/releases/latest) and
+[PyPI](https://pypi.org/project/flylight/).
 
 Tag pushes like `vX.Y.Z` run the release workflow: build artifacts, create a
 GitHub release, publish to PyPI, and update `gumadeiras/homebrew-tap`.
